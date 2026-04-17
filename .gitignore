@@ -1,0 +1,45 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# RAKT-CONNECT GLOBAL GITIGNORE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Node / Next.js / React apps
+node_modules/
+.next/
+out/
+build/
+coverage/
+
+# Python (AI Microservice)
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Hyperledger Fabric Generated Items (Network)
+network/crypto-config/
+network/channel-artifacts/
+network/*.tar.gz
+network/*.block
+network/*.tx
+
+# Flutter / Mobile App
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+*.mode1v3
+*.mode2v3
+*.pbxuser
+*.perspectivev3
+Flutter/Generated.xcconfig
+*.generated.objc.h
+*.generated.objc.m
+*.generated.swifth
+*.generated.swift
+.idea/
+
+# OS/System outputs
+.DS_Store
+Thumbs.db

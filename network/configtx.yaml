@@ -1,0 +1,187 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# RAKT-CONNECT — Channel Configuration
+# Defines organizations, policies, and channel profiles
+# for the Hyperledger Fabric network
+# ═══════════════════════════════════════════════════════════════════════════════
+
+Organizations:
+  - &OrdererOrg
+    Name: OrdererMSP
+    ID: OrdererMSP
+    MSPDir: crypto-config/ordererOrganizations/raktconnect.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('OrdererMSP.member')"
+      Writers:
+        Type: Signature
+        Rule: "OR('OrdererMSP.member')"
+      Admins:
+        Type: Signature
+        Rule: "OR('OrdererMSP.admin')"
+
+  - &Hospital
+    Name: HospitalMSP
+    ID: HospitalMSP
+    MSPDir: crypto-config/peerOrganizations/hospital.raktconnect.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('HospitalMSP.admin', 'HospitalMSP.peer', 'HospitalMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('HospitalMSP.admin', 'HospitalMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('HospitalMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('HospitalMSP.peer')"
+    AnchorPeers:
+      - Host: peer0.hospital.raktconnect.com
+        Port: 7051
+
+  - &BloodBank
+    Name: BloodBankMSP
+    ID: BloodBankMSP
+    MSPDir: crypto-config/peerOrganizations/bloodbank.raktconnect.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('BloodBankMSP.admin', 'BloodBankMSP.peer', 'BloodBankMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('BloodBankMSP.admin', 'BloodBankMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('BloodBankMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('BloodBankMSP.peer')"
+    AnchorPeers:
+      - Host: peer0.bloodbank.raktconnect.com
+        Port: 8051
+
+  - &Lab
+    Name: LabMSP
+    ID: LabMSP
+    MSPDir: crypto-config/peerOrganizations/lab.raktconnect.com/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('LabMSP.admin', 'LabMSP.peer', 'LabMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('LabMSP.admin', 'LabMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('LabMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('LabMSP.peer')"
+    AnchorPeers:
+      - Host: peer0.lab.raktconnect.com
+        Port: 9051
+
+Capabilities:
+  Channel: &ChannelCapabilities
+    V2_0: true
+  Orderer: &OrdererCapabilities
+    V2_0: true
+  Application: &ApplicationCapabilities
+    V2_0: true
+
+Application: &ApplicationDefaults
+  Organizations:
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+    LifecycleEndorsement:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Endorsement"
+    Endorsement:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Endorsement"
+  Capabilities:
+    <<: *ApplicationCapabilities
+
+Orderer: &OrdererDefaults
+  OrdererType: etcdraft
+  Addresses:
+    - orderer1.raktconnect.com:7050
+  BatchTimeout: 2s
+  BatchSize:
+    MaxMessageCount: 10
+    AbsoluteMaxBytes: 99 MB
+    PreferredMaxBytes: 512 KB
+  EtcdRaft:
+    Consenters:
+      - Host: orderer1.raktconnect.com
+        Port: 7050
+        ClientTLSCert: crypto-config/ordererOrganizations/raktconnect.com/orderers/orderer1.raktconnect.com/tls/server.crt
+        ServerTLSCert: crypto-config/ordererOrganizations/raktconnect.com/orderers/orderer1.raktconnect.com/tls/server.crt
+  Organizations:
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+    BlockValidation:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+  Capabilities:
+    <<: *OrdererCapabilities
+
+Channel: &ChannelDefaults
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+  Capabilities:
+    <<: *ChannelCapabilities
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PROFILES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+Profiles:
+  RaktOrdererGenesis:
+    <<: *ChannelDefaults
+    Orderer:
+      <<: *OrdererDefaults
+      Organizations:
+        - *OrdererOrg
+    Consortiums:
+      RaktConsortium:
+        Organizations:
+          - *Hospital
+          - *BloodBank
+          - *Lab
+
+  RaktChannel:
+    Consortium: RaktConsortium
+    <<: *ChannelDefaults
+    Application:
+      <<: *ApplicationDefaults
+      Organizations:
+        - *Hospital
+        - *BloodBank
+        - *Lab

@@ -1,0 +1,51 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# RAKT-CONNECT — Crypto Configuration
+# Generates MSP (Membership Service Provider) material for all organizations
+# ═══════════════════════════════════════════════════════════════════════════════
+
+OrdererOrgs:
+  - Name: Orderer
+    Domain: raktconnect.com
+    EnableNodeOUs: true
+    Specs:
+      - Hostname: orderer1
+        SANS:
+          - localhost
+          - 127.0.0.1
+
+PeerOrgs:
+  # Org1: Hospital
+  - Name: Hospital
+    Domain: hospital.raktconnect.com
+    EnableNodeOUs: true
+    Template:
+      Count: 1
+      SANS:
+        - localhost
+        - 127.0.0.1
+    Users:
+      Count: 3  # Admin, BloodBankOfficer, MedicalOfficer
+
+  # Org2: BloodBank
+  - Name: BloodBank
+    Domain: bloodbank.raktconnect.com
+    EnableNodeOUs: true
+    Template:
+      Count: 1
+      SANS:
+        - localhost
+        - 127.0.0.1
+    Users:
+      Count: 2  # Admin, Technician
+
+  # Org3: Lab
+  - Name: Lab
+    Domain: lab.raktconnect.com
+    EnableNodeOUs: true
+    Template:
+      Count: 1
+      SANS:
+        - localhost
+        - 127.0.0.1
+    Users:
+      Count: 2  # Admin, LabTechnician

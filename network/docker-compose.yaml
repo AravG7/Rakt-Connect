@@ -1,0 +1,320 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# RAKT-CONNECT — Docker Compose v2.0
+# Full Hyperledger Fabric Network + Supporting Services
+# 3 Orgs (Hospital, BloodBank, Lab) + 3 CouchDB + 3 CA + Orderer
+# API Gateway + AI Microservice + Monitoring
+# ═══════════════════════════════════════════════════════════════════════════════
+
+version: '3.7'
+
+networks:
+  rakt-network:
+    name: rakt-network
+
+volumes:
+  orderer1.raktconnect.com:
+  peer0.hospital.raktconnect.com:
+  peer0.bloodbank.raktconnect.com:
+  peer0.lab.raktconnect.com:
+
+services:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # CERTIFICATE AUTHORITIES (Fabric CA)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  ca.hospital.raktconnect.com:
+    container_name: ca.hospital.raktconnect.com
+    image: hyperledger/fabric-ca:1.5
+    environment:
+      - FABRIC_CA_HOME=/etc/hyperledger/fabric-ca-server
+      - FABRIC_CA_SERVER_CA_NAME=ca-hospital
+      - FABRIC_CA_SERVER_TLS_ENABLED=true
+      - FABRIC_CA_SERVER_PORT=7054
+    ports:
+      - "7054:7054"
+    command: sh -c 'fabric-ca-server start -b admin:adminpw -d'
+    networks:
+      - rakt-network
+
+  ca.bloodbank.raktconnect.com:
+    container_name: ca.bloodbank.raktconnect.com
+    image: hyperledger/fabric-ca:1.5
+    environment:
+      - FABRIC_CA_HOME=/etc/hyperledger/fabric-ca-server
+      - FABRIC_CA_SERVER_CA_NAME=ca-bloodbank
+      - FABRIC_CA_SERVER_TLS_ENABLED=true
+      - FABRIC_CA_SERVER_PORT=8054
+    ports:
+      - "8054:8054"
+    command: sh -c 'fabric-ca-server start -b admin:adminpw -d'
+    networks:
+      - rakt-network
+
+  ca.lab.raktconnect.com:
+    container_name: ca.lab.raktconnect.com
+    image: hyperledger/fabric-ca:1.5
+    environment:
+      - FABRIC_CA_HOME=/etc/hyperledger/fabric-ca-server
+      - FABRIC_CA_SERVER_CA_NAME=ca-lab
+      - FABRIC_CA_SERVER_TLS_ENABLED=true
+      - FABRIC_CA_SERVER_PORT=9054
+    ports:
+      - "9054:9054"
+    command: sh -c 'fabric-ca-server start -b admin:adminpw -d'
+    networks:
+      - rakt-network
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ORDERER (Raft Consensus)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  orderer1.raktconnect.com:
+    container_name: orderer1.raktconnect.com
+    image: hyperledger/fabric-orderer:2.5
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - ORDERER_GENERAL_LISTENADDRESS=0.0.0.0
+      - ORDERER_GENERAL_LISTENPORT=7050
+      - ORDERER_GENERAL_GENESISMETHOD=file
+      - ORDERER_GENERAL_GENESISFILE=/var/hyperledger/orderer/orderer.genesis.block
+      - ORDERER_GENERAL_LOCALMSPID=OrdererMSP
+      - ORDERER_GENERAL_LOCALMSPDIR=/var/hyperledger/orderer/msp
+      - ORDERER_GENERAL_TLS_ENABLED=true
+      - ORDERER_GENERAL_TLS_PRIVATEKEY=/var/hyperledger/orderer/tls/server.key
+      - ORDERER_GENERAL_TLS_CERTIFICATE=/var/hyperledger/orderer/tls/server.crt
+      - ORDERER_GENERAL_TLS_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      - ORDERER_GENERAL_CLUSTER_CLIENTCERTIFICATE=/var/hyperledger/orderer/tls/server.crt
+      - ORDERER_GENERAL_CLUSTER_CLIENTPRIVATEKEY=/var/hyperledger/orderer/tls/server.key
+      - ORDERER_GENERAL_CLUSTER_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      # Metrics for Prometheus
+      - ORDERER_OPERATIONS_LISTENADDRESS=0.0.0.0:8443
+      - ORDERER_METRICS_PROVIDER=prometheus
+    working_dir: /opt/gopath/src/github.com/hyperledger/fabric
+    command: orderer
+    volumes:
+      - orderer1.raktconnect.com:/var/hyperledger/production/orderer
+    ports:
+      - 7050:7050
+      - 8443:8443
+    networks:
+      - rakt-network
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ORG1: HOSPITAL PEER + CouchDB
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  couchdb0:
+    container_name: couchdb0
+    image: couchdb:3.3
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=adminpw
+    ports:
+      - "5984:5984"
+    networks:
+      - rakt-network
+
+  peer0.hospital.raktconnect.com:
+    container_name: peer0.hospital.raktconnect.com
+    image: hyperledger/fabric-peer:2.5
+    environment:
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=rakt-network
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_PEER_ID=peer0.hospital.raktconnect.com
+      - CORE_PEER_ADDRESS=peer0.hospital.raktconnect.com:7051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:7051
+      - CORE_PEER_CHAINCODEADDRESS=peer0.hospital.raktconnect.com:7052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:7052
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.hospital.raktconnect.com:7051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.hospital.raktconnect.com:7051
+      - CORE_PEER_LOCALMSPID=HospitalMSP
+      # CouchDB for rich queries
+      - CORE_LEDGER_STATE_STATEDATABASE=CouchDB
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS=couchdb0:5984
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME=admin
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD=adminpw
+      # Metrics
+      - CORE_OPERATIONS_LISTENADDRESS=0.0.0.0:9443
+      - CORE_METRICS_PROVIDER=prometheus
+    volumes:
+      - /var/run/:/host/var/run/
+      - peer0.hospital.raktconnect.com:/var/hyperledger/production
+    ports:
+      - 7051:7051
+      - 9443:9443
+    networks:
+      - rakt-network
+    depends_on:
+      - couchdb0
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ORG2: BLOODBANK PEER + CouchDB
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  couchdb1:
+    container_name: couchdb1
+    image: couchdb:3.3
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=adminpw
+    ports:
+      - "6984:5984"
+    networks:
+      - rakt-network
+
+  peer0.bloodbank.raktconnect.com:
+    container_name: peer0.bloodbank.raktconnect.com
+    image: hyperledger/fabric-peer:2.5
+    environment:
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=rakt-network
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_PEER_ID=peer0.bloodbank.raktconnect.com
+      - CORE_PEER_ADDRESS=peer0.bloodbank.raktconnect.com:8051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:8051
+      - CORE_PEER_CHAINCODEADDRESS=peer0.bloodbank.raktconnect.com:8052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:8052
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.bloodbank.raktconnect.com:8051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.bloodbank.raktconnect.com:8051
+      - CORE_PEER_LOCALMSPID=BloodBankMSP
+      - CORE_LEDGER_STATE_STATEDATABASE=CouchDB
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS=couchdb1:5984
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME=admin
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD=adminpw
+      - CORE_OPERATIONS_LISTENADDRESS=0.0.0.0:10443
+      - CORE_METRICS_PROVIDER=prometheus
+    volumes:
+      - /var/run/:/host/var/run/
+      - peer0.bloodbank.raktconnect.com:/var/hyperledger/production
+    ports:
+      - 8051:8051
+      - 10443:10443
+    networks:
+      - rakt-network
+    depends_on:
+      - couchdb1
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ORG3: LAB PEER + CouchDB
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  couchdb2:
+    container_name: couchdb2
+    image: couchdb:3.3
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=adminpw
+    ports:
+      - "7984:5984"
+    networks:
+      - rakt-network
+
+  peer0.lab.raktconnect.com:
+    container_name: peer0.lab.raktconnect.com
+    image: hyperledger/fabric-peer:2.5
+    environment:
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=rakt-network
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_PEER_ID=peer0.lab.raktconnect.com
+      - CORE_PEER_ADDRESS=peer0.lab.raktconnect.com:9051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:9051
+      - CORE_PEER_CHAINCODEADDRESS=peer0.lab.raktconnect.com:9052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:9052
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.lab.raktconnect.com:9051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.lab.raktconnect.com:9051
+      - CORE_PEER_LOCALMSPID=LabMSP
+      - CORE_LEDGER_STATE_STATEDATABASE=CouchDB
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS=couchdb2:5984
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME=admin
+      - CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD=adminpw
+      - CORE_OPERATIONS_LISTENADDRESS=0.0.0.0:11443
+      - CORE_METRICS_PROVIDER=prometheus
+    volumes:
+      - /var/run/:/host/var/run/
+      - peer0.lab.raktconnect.com:/var/hyperledger/production
+    ports:
+      - 9051:9051
+      - 11443:11443
+    networks:
+      - rakt-network
+    depends_on:
+      - couchdb2
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # APPLICATION SERVICES
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  api-gateway:
+    container_name: rakt-api-gateway
+    build:
+      context: ../api-gateway
+      dockerfile: Dockerfile
+    environment:
+      - PORT=3001
+      - NODE_ENV=production
+      - FABRIC_PEER_ENDPOINT=peer0.hospital.raktconnect.com:7051
+      - FABRIC_ORDERER_ENDPOINT=orderer1.raktconnect.com:7050
+      - AI_SERVICE_URL=http://ai-microservice:8000
+    ports:
+      - "3001:3001"
+    networks:
+      - rakt-network
+    depends_on:
+      - peer0.hospital.raktconnect.com
+      - peer0.bloodbank.raktconnect.com
+      - peer0.lab.raktconnect.com
+
+  ai-microservice:
+    container_name: rakt-ai-service
+    build:
+      context: ../ai-microservice
+      dockerfile: Dockerfile
+    environment:
+      - PYTHONUNBUFFERED=1
+      - API_GATEWAY_URL=http://api-gateway:3001
+      - MODEL_PATH=/app/models
+    ports:
+      - "8000:8000"
+    networks:
+      - rakt-network
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # MONITORING (Prometheus + Grafana)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  prometheus:
+    container_name: rakt-prometheus
+    image: prom/prometheus:v2.51.0
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - rakt-network
+
+  grafana:
+    container_name: rakt-grafana
+    image: grafana/grafana:10.4.0
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=raktadmin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3002:3000"
+    networks:
+      - rakt-network
+    depends_on:
+      - prometheus

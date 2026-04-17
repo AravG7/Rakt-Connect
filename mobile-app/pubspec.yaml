@@ -1,0 +1,24 @@
+name: rakt_connect_mobile
+description: A new Flutter project for Rakt-Connect Donors & Patients.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_bloc: ^9.1.1
+  qr_flutter: ^4.1.0
+  cupertino_icons: ^1.0.2
+  geolocator: ^13.0.0
+  mobile_scanner: ^5.2.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

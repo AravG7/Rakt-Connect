@@ -1,0 +1,34 @@
+# Prometheus Configuration for Rakt-Connect
+# Scrapes metrics from Fabric peers, orderer, and application services
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'orderer'
+    static_configs:
+      - targets: ['orderer1.raktconnect.com:8443']
+        labels:
+          instance: 'orderer1'
+
+  - job_name: 'peer-hospital'
+    static_configs:
+      - targets: ['peer0.hospital.raktconnect.com:9443']
+        labels:
+          instance: 'peer0-hospital'
+          org: 'HospitalMSP'
+
+  - job_name: 'peer-bloodbank'
+    static_configs:
+      - targets: ['peer0.bloodbank.raktconnect.com:10443']
+        labels:
+          instance: 'peer0-bloodbank'
+          org: 'BloodBankMSP'
+
+  - job_name: 'peer-lab'
+    static_configs:
+      - targets: ['peer0.lab.raktconnect.com:11443']
+        labels:
+          instance: 'peer0-lab'
+          org: 'LabMSP'
