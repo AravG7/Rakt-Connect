@@ -77,7 +77,7 @@ jobs:
           cache-dependency-path: ai-microservice/requirements.txt
       - run: |
           cd ai-microservice
-          pip install -r requirements.txt
+          pip install -r requirements.txt pytest httpx
           python -m pytest tests/ -v
 
   # ── Chaincode Tests (Go) ───────────────────────────────────────────────────
