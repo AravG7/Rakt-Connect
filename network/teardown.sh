@@ -11,7 +11,7 @@ echo "🧹 Rakt-Connect — Tearing down network..."
 echo ""
 
 # Stop and remove containers
-docker-compose -f docker-compose.yaml down --volumes --remove-orphans 2>/dev/null || true
+docker compose -f docker-compose.yaml down --volumes --remove-orphans 2>/dev/null || true
 
 # Remove chaincode containers
 docker rm -f $(docker ps -aq --filter name=dev-peer) 2>/dev/null || true

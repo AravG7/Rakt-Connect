@@ -47,7 +47,7 @@ echo "   ✅ Anchor peer updates created"
 
 # ── Step 3: Start Docker Containers ──────────────────────────────────────────
 echo "🐳 Step 3: Starting Docker containers..."
-docker-compose -f docker-compose.yaml up -d
+docker compose -f docker-compose.yaml up -d
 echo "   ✅ All containers started"
 
 # Wait for containers to initialize
