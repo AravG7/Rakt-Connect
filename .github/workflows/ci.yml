@@ -138,10 +138,10 @@ jobs:
       - uses: actions/checkout@v4
       - run: |
           cd network
-          docker-compose -f docker-compose.yaml up -d couchdb0 couchdb1 couchdb2 api-gateway ai-microservice
+          docker compose -f docker-compose.yaml up -d couchdb0 couchdb1 couchdb2 api-gateway ai-microservice
           sleep 10
           # Health checks
           curl -f http://localhost:3001/health || exit 1
           curl -f http://localhost:8000/health || exit 1
           # Cleanup
-          docker-compose down -v
+          docker compose down -v
