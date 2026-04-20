@@ -997,16 +997,20 @@ app.get('/hcx/stats', (req, res) => {
 // START SERVER
 // ═══════════════════════════════════════════════════════════════════════════════
 
-app.listen(PORT, () => {
-  console.log(`
-  ╔══════════════════════════════════════════════════╗
-  ║   🩸 Rakt-Connect API Gateway v2.5              ║
-  ║   Running on port ${PORT}                          ║
-  ║   Blockchain: Hyperledger Fabric v3.0 (mock)     ║
-  ║   Endpoints: 30+ REST APIs                       ║
-  ║   Modules: Core + Rare Registry + Black Swan     ║
-  ║            + HCX Gateway                         ║
-  ║   Compliance: NBTC + DPDP + IT Act + HCX + EMS  ║
-  ╚══════════════════════════════════════════════════╝
-  `);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`
+    ╔══════════════════════════════════════════════════╗
+    ║   🩸 Rakt-Connect API Gateway v2.5              ║
+    ║   Running on port ${PORT}                          ║
+    ║   Blockchain: Hyperledger Fabric v3.0 (mock)     ║
+    ║   Endpoints: 30+ REST APIs                       ║
+    ║   Modules: Core + Rare Registry + Black Swan     ║
+    ║            + HCX Gateway                         ║
+    ║   Compliance: NBTC + DPDP + IT Act + HCX + EMS  ║
+    ╚══════════════════════════════════════════════════╝
+    `);
+  });
+}
+
+module.exports = app;
