@@ -142,32 +142,41 @@ jobs:
           cd network
           docker compose -f docker-compose.yaml up -d couchdb0 couchdb1 couchdb2 api-gateway ai-microservice
           
-          # Wait for services with retries (STQC Compliance requires x-forwarded-proto header)
-          max_attempts=20
+          # Wait for services with improved health checks (STQC Compliance requires x-forwarded-proto header)
+          max_attempts=30
           attempt=1
           echo "Waiting for services to initialize..."
+          
           while [ $attempt -le $max_attempts ]; do
             echo "Health check attempt $attempt/$max_attempts..."
-            GATEWAY_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" -H "x-forwarded-proto: https" http://localhost:3001/health)
-            AI_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health)
             
-            if [ "$GATEWAY_HEALTH" == "200" ] && [ "$AI_HEALTH" == "200" ]; then
+            echo "Testing API Gateway..."
+            GATEWAY_HEALTH=$(curl -v -s -o /dev/null -w "%{http_code}" -H "x-forwarded-proto: https" http://localhost:3001/health 2>&1 || echo "000")
+            
+            echo "Testing AI Microservice..."
+            AI_HEALTH=$(curl -v -s -o /dev/null -w "%{http_code}" http://localhost:8000/health 2>&1 || echo "000")
+            
+            echo "Status: Gateway=$GATEWAY_HEALTH, AI=$AI_HEALTH"
+            
+            if [ "$GATEWAY_HEALTH" = "200" ] && [ "$AI_HEALTH" = "200" ]; then
               echo "✅ All services are healthy!"
               break
             fi
             
-            echo "Status: Gateway=$GATEWAY_HEALTH, AI=$AI_HEALTH"
-            
             if [ $attempt -eq $max_attempts ]; then
               echo "❌ Services failed to become healthy in time"
+              echo "=== API Gateway logs ==="
               docker compose logs api-gateway
+              echo "=== AI Microservice logs ==="
               docker compose logs ai-microservice
+              echo "=== Network status ==="
+              docker compose ps
               exit 1
             fi
             
-            sleep 3
+            sleep 5
             attempt=$((attempt + 1))
           done
-
+          
           # Cleanup
           docker compose down -v
