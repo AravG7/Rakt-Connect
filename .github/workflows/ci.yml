@@ -141,9 +141,33 @@ jobs:
       - run: |
           cd network
           docker compose -f docker-compose.yaml up -d couchdb0 couchdb1 couchdb2 api-gateway ai-microservice
-          sleep 10
-          # Health checks
-          curl -f http://localhost:3001/health || exit 1
-          curl -f http://localhost:8000/health || exit 1
+          
+          # Wait for services with retries (STQC Compliance requires x-forwarded-proto header)
+          max_attempts=20
+          attempt=1
+          echo "Waiting for services to initialize..."
+          while [ $attempt -le $max_attempts ]; do
+            echo "Health check attempt $attempt/$max_attempts..."
+            GATEWAY_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" -H "x-forwarded-proto: https" http://localhost:3001/health)
+            AI_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health)
+            
+            if [ "$GATEWAY_HEALTH" == "200" ] && [ "$AI_HEALTH" == "200" ]; then
+              echo "✅ All services are healthy!"
+              break
+            fi
+            
+            echo "Status: Gateway=$GATEWAY_HEALTH, AI=$AI_HEALTH"
+            
+            if [ $attempt -eq $max_attempts ]; then
+              echo "❌ Services failed to become healthy in time"
+              docker compose logs api-gateway
+              docker compose logs ai-microservice
+              exit 1
+            fi
+            
+            sleep 3
+            attempt=$((attempt + 1))
+          done
+
           # Cleanup
           docker compose down -v
