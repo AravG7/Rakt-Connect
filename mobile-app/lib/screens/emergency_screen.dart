@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/broadcast_service.dart';
 
 class EmergencyScreen extends StatefulWidget {
   const EmergencyScreen({super.key});
@@ -10,6 +11,7 @@ class EmergencyScreen extends StatefulWidget {
 class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProviderStateMixin {
   late AnimationController _animController;
   bool hasActiveAlert = true;
+  bool _isLoading = false;
 
   final List<Map<String, dynamic>> alerts = [
     {
@@ -56,6 +58,44 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
   void dispose() {
     _animController.dispose();
     super.dispose();
+  }
+
+  Future<void> _respondToAlert(String broadcastId, String responseType) async {
+    setState(() => _isLoading = true);
+    try {
+      // Hardcoded donor DID for demo purposes
+      final donorDid = 'did:rakt:donor:001';
+      final res = await BroadcastService.respondToBroadcast(
+        broadcastId: broadcastId,
+        donorDid: donorDid,
+        response: responseType,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Response sent successfully: ${res['message'] ?? 'Thanks!'}'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      
+      // Remove the alert from the UI
+      setState(() {
+        alerts.removeWhere((a) => a['id'] == broadcastId);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to send response. Please try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
@@ -249,7 +289,7 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () {},
+                    onPressed: _isLoading ? null : () => _respondToAlert(alert['id'], 'DECLINE'),
                     style: OutlinedButton.styleFrom(
                       side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -261,9 +301,15 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
                 Expanded(
                   flex: 2,
                   child: ElevatedButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(Icons.navigation_rounded, size: 18),
-                    label: const Text('Accept & Navigate', style: TextStyle(fontWeight: FontWeight.w700)),
+                    onPressed: _isLoading ? null : () => _respondToAlert(alert['id'], 'ACCEPT'),
+                    icon: _isLoading 
+                        ? const SizedBox(
+                            width: 18, 
+                            height: 18, 
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+                          )
+                        : const Icon(Icons.navigation_rounded, size: 18),
+                    label: Text(_isLoading ? 'Processing...' : 'Accept & Navigate', style: const TextStyle(fontWeight: FontWeight.w700)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: isCritical ? const Color(0xFFEF4444) : const Color(0xFFF59E0B),
                       foregroundColor: Colors.white,

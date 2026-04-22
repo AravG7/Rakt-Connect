@@ -5,7 +5,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --production
 
-COPY server.js ./
+COPY . .
 
 EXPOSE 3001
 

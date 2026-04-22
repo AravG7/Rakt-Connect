@@ -5,11 +5,12 @@ const path = require('path');
 
 async function main() {
     try {
-        const ccpPath = path.resolve(__dirname, '..', '..', 'network', 'organizations', 'peerOrganizations', 'org1.example.com', 'connection-org1.json');
+        const ccpPath = path.resolve(__dirname, '..', '..', 'network', 'connection-hospital.json');
         const ccp = JSON.parse(fs.readFileSync(ccpPath, 'utf8'));
 
-        const caInfo = ccp.certificateAuthorities['ca.org1.example.com'];
-        const caTLSCACerts = caInfo.tlsCACerts.pem;
+        const caInfo = ccp.certificateAuthorities['ca-hospital'];
+        const caTLSCACertsPath = path.resolve(__dirname, '..', '..', 'network', caInfo.tlsCACerts.path);
+        const caTLSCACerts = fs.readFileSync(caTLSCACertsPath, 'utf8');
         const ca = new FabricCAServices(caInfo.url, { trustedRoots: caTLSCACerts, verify: false }, caInfo.caName);
 
         const walletPath = path.join(__dirname, '..', 'wallet');
@@ -28,7 +29,7 @@ async function main() {
                 certificate: enrollment.certificate,
                 privateKey: enrollment.key.toBytes(),
             },
-            mspId: 'Org1MSP',
+            mspId: 'HospitalMSP',
             type: 'X.509',
         };
         await wallet.put('admin', x509Identity);

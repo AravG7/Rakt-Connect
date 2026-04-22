@@ -284,7 +284,7 @@ app.post('/broadcast/emergency', (req, res) => {
 
 // POST /broadcast/:id/respond — Donor accepts/declines EBM
 app.post('/broadcast/:id/respond', (req, res) => {
-  const { donorDid, response } = req.body; // response: 'ACCEPT' or 'DECLINE'
+  const { donorDid, response, deviceId } = req.body; // response: 'ACCEPT' or 'DECLINE'
   const broadcast = broadcasts.get(req.params.id);
 
   if (!broadcast) return res.status(404).json({ error: 'Broadcast not found' });
@@ -307,7 +307,12 @@ app.post('/broadcast/:id/respond', (req, res) => {
     }
   }
 
-  res.json({ broadcast, donorResponse: response });
+  res.json({ 
+    broadcast, 
+    donorResponse: response,
+    timestamp: new Date().toISOString(),
+    deviceId: deviceId || 'UNKNOWN_DEVICE_ID'
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

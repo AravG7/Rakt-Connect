@@ -1,0 +1,42 @@
+{
+    "name": "rakt-connect-hospital",
+    "version": "1.0.0",
+    "client": {
+        "organization": "Hospital"
+    },
+    "organizations": {
+        "Hospital": {
+            "mspid": "HospitalMSP",
+            "peers": [
+                "peer0.hospital.raktconnect.com"
+            ],
+            "certificateAuthorities": [
+                "ca-hospital"
+            ]
+        }
+    },
+    "peers": {
+        "peer0.hospital.raktconnect.com": {
+            "url": "grpcs://localhost:7051",
+            "tlsCACerts": {
+                "path": "crypto-config/peerOrganizations/hospital.raktconnect.com/tlsca/tlsca.hospital.raktconnect.com-cert.pem"
+            },
+            "grpcOptions": {
+                "ssl-target-name-override": "peer0.hospital.raktconnect.com",
+                "hostnameOverride": "peer0.hospital.raktconnect.com"
+            }
+        }
+    },
+    "certificateAuthorities": {
+        "ca-hospital": {
+            "url": "https://localhost:7054",
+            "caName": "ca-hospital",
+            "tlsCACerts": {
+                "path": "crypto-config/peerOrganizations/hospital.raktconnect.com/tlsca/tlsca.hospital.raktconnect.com-cert.pem"
+            },
+            "httpOptions": {
+                "verify": false
+            }
+        }
+    }
+}
