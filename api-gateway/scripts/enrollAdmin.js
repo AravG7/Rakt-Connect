@@ -1,4 +1,3 @@
-const { Wallets } = require('fabric-network');
 const FabricCAServices = require('fabric-ca-client');
 const fs = require('fs');
 const path = require('path');
@@ -14,11 +13,12 @@ async function main() {
         const ca = new FabricCAServices(caInfo.url, { trustedRoots: caTLSCACerts, verify: false }, caInfo.caName);
 
         const walletPath = path.join(__dirname, '..', 'wallet');
-        const wallet = await Wallets.newFileSystemWallet(walletPath);
-        console.log(`Wallet path: ${walletPath}`);
+        if (!fs.existsSync(walletPath)) {
+            fs.mkdirSync(walletPath, { recursive: true });
+        }
 
-        const identity = await wallet.get('admin');
-        if (identity) {
+        const adminIdPath = path.join(walletPath, 'admin.id');
+        if (fs.existsSync(adminIdPath)) {
             console.log('An identity for the admin user "admin" already exists in the wallet');
             return;
         }
@@ -31,9 +31,11 @@ async function main() {
             },
             mspId: 'HospitalMSP',
             type: 'X.509',
+            version: 1
         };
-        await wallet.put('admin', x509Identity);
-        console.log('Successfully enrolled admin user "admin" and imported it into the wallet');
+        
+        fs.writeFileSync(adminIdPath, JSON.stringify(x509Identity, null, 2));
+        console.log('Successfully enrolled admin user "admin" and saved to wallet/admin.id');
 
     } catch (error) {
         console.error(`Failed to enroll admin user "admin": ${error}`);

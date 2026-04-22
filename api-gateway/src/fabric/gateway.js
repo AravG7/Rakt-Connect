@@ -1,33 +1,43 @@
-const { Gateway, Wallets } = require('fabric-network');
-const path = require('path');
-const fs = require('fs');
+const { connect, signers } = require('@hyperledger/fabric-gateway');
+const grpc = require('@grpc/grpc-js');
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 
 class FabricGateway {
     constructor() {
-        this.gateway = new Gateway();
-        this.ccpPath = path.resolve(__dirname, '..', '..', '..', 'network', 'organizations', 'peerOrganizations', 'hospital.raktconnect.com', 'connection-hospital.json');
-        this.walletPath = path.resolve(__dirname, '..', '..', 'wallet');
+        this.ccpPath = path.resolve(__dirname, '..', '..', '..', 'network', 'connection-hospital.json');
+        this.tlsCertPath = path.resolve(__dirname, '..', '..', '..', 'network', 'crypto-config', 'peerOrganizations', 'hospital.raktconnect.com', 'tlsca', 'tlsca.hospital.raktconnect.com-cert.pem');
+        this.peerEndpoint = 'localhost:7051';
+        this.peerHostAlias = 'peer0.hospital.raktconnect.com';
+        this.mspId = 'HospitalMSP';
     }
 
     async init() {
         try {
-            const wallet = await Wallets.newFileSystemWallet(this.walletPath);
-            const identity = await wallet.get('appUser');
-
-            if (!identity) {
-                console.error("Identity 'appUser' not found in wallet. Run registerUser.js first.");
+            // Load identity from wallet (admin.id)
+            const walletPath = path.resolve(__dirname, '..', '..', 'wallet', 'admin.id');
+            if (!fs.existsSync(walletPath)) {
+                console.error("Identity 'admin' not found in wallet. Run enrollAdmin.js first.");
                 return;
             }
 
-            const ccp = JSON.parse(fs.readFileSync(this.ccpPath, 'utf8'));
+            const identityData = JSON.parse(fs.readFileSync(walletPath, 'utf8'));
+            
+            const cert = identityData.credentials.certificate;
+            const privateKeyPem = identityData.credentials.privateKey;
 
-            await this.gateway.connect(ccp, {
-                wallet,
-                identity: 'appUser',
-                discovery: { enabled: true, asLocalhost: true }
+            const client = await this.newGrpcConnection();
+            this.gateway = connect({
+                client,
+                identity: { mspId: this.mspId, credentials: Buffer.from(cert) },
+                signer: signers.newPrivateKeySigner(crypto.createPrivateKey(privateKeyPem)),
+                // Default options
+                evaluateOptions: () => ({ deadline: Date.now() + 5000 }),
+                submitOptions: () => ({ deadline: Date.now() + 30000 }),
             });
 
-            this.network = await this.gateway.getNetwork('raktchannel');
+            this.network = this.gateway.getNetwork('rakt-channel');
             
             // Map the 9 distinct modular contracts
             this.contracts = {
@@ -42,12 +52,20 @@ class FabricGateway {
                 token: this.network.getContract('blood-bank', 'RaktToken')
             };
 
-            console.log("Hyperledger Fabric v3.0 Gateway Initialized Successfully.");
+            console.log("Hyperledger Fabric v3.0 Gateway (Modern SDK) Initialized Successfully.");
 
         } catch (error) {
             console.error(`Failed to connect to gateway: ${error}`);
-            process.exit(1);
+            // process.exit(1); // Don't exit if it fails in a server context, just log it.
         }
+    }
+
+    async newGrpcConnection() {
+        const tlsRootCert = fs.readFileSync(this.tlsCertPath);
+        const tlsCredentials = grpc.credentials.createSsl(tlsRootCert);
+        return new grpc.Client(this.peerEndpoint, tlsCredentials, {
+            'grpc.ssl_target_name_override': this.peerHostAlias,
+        });
     }
 
     async submitTransaction(contractName, tcnName, ...args) {
@@ -75,7 +93,9 @@ class FabricGateway {
     }
 
     disconnect() {
-        this.gateway.disconnect();
+        if (this.gateway) {
+            this.gateway.close();
+        }
     }
 }
 

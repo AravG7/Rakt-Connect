@@ -5,26 +5,29 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:rakt_connect_mobile/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
+  testWidgets('Dashboard smoke test', (WidgetTester tester) async {
     // Build our app and trigger a frame.
     await tester.pumpWidget(const RaktConnectApp());
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    // Verify that the app title 'Rakt-Connect' is present.
+    expect(find.text('Rakt-Connect'), findsAtLeastNWidgets(1));
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    // Verify that the donor name 'Rajesh K.' is present.
+    expect(find.text('Rajesh K.'), findsOneWidget);
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // Verify that the blood group 'O-' is present.
+    expect(find.text('O-'), findsOneWidget);
+
+    // Verify navigation bar labels
+    expect(find.text('Home'), findsOneWidget);
+    expect(find.text('Emergency'), findsOneWidget);
+    expect(find.text('Scan'), findsOneWidget);
+    expect(find.text('History'), findsOneWidget);
+    expect(find.text('Profile'), findsOneWidget);
   });
 }

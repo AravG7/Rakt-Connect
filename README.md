@@ -17,7 +17,7 @@
 │                           CLIENT LAYER                                       │
 │  ┌──────────────────────┐  ┌──────────────────────┐  ┌─────────────────┐   │
 │  │  Web Dashboard        │  │   Mobile App          │  │  Monitoring     │   │
-│  │  Next.js 14 (12 pages)│  │   Flutter (8 screens) │  │  Grafana :3002  │   │
+│  │  Next.js 16 (12 pages)│  │   Flutter (8 screens) │  │  Grafana :3002  │   │
 │  │  :3000                │  │                        │  │  Prom :9090     │   │
 │  └────────┬──────────────┘  └────────┬───────────────┘  └───────┬────────┘  │
 └───────────┼──────────────────────────┼──────────────────────────┼────────────┘
@@ -27,7 +27,7 @@
 │                     API GATEWAY v2.5 (Express.js) — 30+ Endpoints            │
 │  Auth │ Donors │ Units │ Inventory │ Emergency │ Compliance │ AI Proxy      │
 │  Rare Registry │ Black Swan │ HCX Gateway                                   │
-│  Port: 3001                                                                  │
+│  Port: 3001 (Modern Fabric SDK)                                             │
 └───────┬──────────────────────────────────────────────────────┬───────────────┘
         │                                                      │
         ▼                                                      ▼
