@@ -560,7 +560,16 @@ app.get('/ai/predict/:hospitalId', async (req, res) => {
 
     if (response.ok) {
       const data = await response.json();
-      return res.json(data);
+      // Normalize response keys to camelCase for API consistency
+      const normalized = {
+        ...data,
+        hospitalId: data.hospital_id || data.hospitalId,
+        bloodGroup: data.blood_group || data.bloodGroup,
+        predictedDemandUnits: data.predicted_demand_units || data.predictedDemandUnits,
+        warningLevel: data.warning_level || data.warningLevel,
+        isMock: false
+      };
+      return res.json(normalized);
     }
   } catch (error) {
     console.warn('AI Microservice unavailable, using mock data for /ai/predict');
