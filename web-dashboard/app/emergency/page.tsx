@@ -1,5 +1,7 @@
 "use client";
 import { useState } from "react";
+import { LiveResponseTracker } from "../../components/emergency/LiveResponseTracker";
+import { ArrivalCard } from "../../components/emergency/ArrivalCard";
 
 const donorChannels = [
   { channel: "WhatsApp Business API", icon: "📱", priority: 1, status: "ready", delay: "0s" },
@@ -218,6 +220,12 @@ export default function EmergencyBroadcast() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* New Components */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6 animate-fade-in delay-5">
+        <LiveResponseTracker broadcastId="EMG-8291" />
+        <ArrivalCard />
       </div>
     </div>
   );

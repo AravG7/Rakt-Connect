@@ -54,11 +54,11 @@ class HCXGatewayScreen extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         gradient: LinearGradient(
           colors: [
-            const Color(0xFF10B981).withOpacity(0.15),
-            const Color(0xFF10B981).withOpacity(0.05),
+            const Color(0xFF10B981).withValues(alpha: 0.15),
+            const Color(0xFF10B981).withValues(alpha: 0.05),
           ],
         ),
-        border: Border.all(color: const Color(0xFF10B981).withOpacity(0.3)),
+        border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
       ),
       padding: const EdgeInsets.all(16),
       child: Row(
@@ -66,7 +66,7 @@ class HCXGatewayScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: const Color(0xFF10B981).withOpacity(0.15),
+              color: const Color(0xFF10B981).withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Text('🎯', style: TextStyle(fontSize: 28)),
@@ -127,7 +127,7 @@ class HCXGatewayScreen extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF3B82F6).withOpacity(0.12),
+                  color: const Color(0xFF3B82F6).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Text('⏳ PROCESSING',
@@ -149,7 +149,7 @@ class HCXGatewayScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFF3B82F6).withOpacity(0.06),
+              color: const Color(0xFF3B82F6).withValues(alpha: 0.06),
               borderRadius: BorderRadius.circular(10),
             ),
             child: const Row(
@@ -244,7 +244,7 @@ class HCXGatewayScreen extends StatelessWidget {
                         width: 2,
                         height: 28,
                         color: isDone
-                            ? const Color(0xFF10B981).withOpacity(0.4)
+                            ? const Color(0xFF10B981).withValues(alpha: 0.4)
                             : const Color(0xFF374151),
                       ),
                   ],
@@ -281,7 +281,7 @@ class HCXGatewayScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: const Color(0xFF8B5CF6).withOpacity(0.08),
+              color: const Color(0xFF8B5CF6).withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Row(
@@ -327,7 +327,7 @@ class HCXGatewayScreen extends StatelessWidget {
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.03),
+                  color: Colors.white.withValues(alpha: 0.03),
                   borderRadius: BorderRadius.circular(10),
                   border: const Border(
                       left: BorderSide(color: Color(0xFF10B981), width: 3)),
@@ -356,7 +356,7 @@ class HCXGatewayScreen extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF10B981).withOpacity(0.12),
+                        color: const Color(0xFF10B981).withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: const Text('₹0 copay',
@@ -377,9 +377,9 @@ class HCXGatewayScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF3B82F6).withOpacity(0.06),
+        color: const Color(0xFF3B82F6).withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF3B82F6).withOpacity(0.15)),
+        border: Border.all(color: const Color(0xFF3B82F6).withValues(alpha: 0.15)),
       ),
       child: const Row(
         children: [

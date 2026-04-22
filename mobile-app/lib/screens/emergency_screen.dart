@@ -70,7 +70,7 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
               margin: const EdgeInsets.only(right: 12),
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: Color.lerp(const Color(0xFFEF4444).withOpacity(0.1), const Color(0xFFEF4444).withOpacity(0.25), _animController.value),
+                color: Color.lerp(const Color(0xFFEF4444).withValues(alpha: 0.1), const Color(0xFFEF4444).withValues(alpha: 0.25), _animController.value),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
@@ -81,7 +81,7 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
                     decoration: BoxDecoration(
                       color: const Color(0xFFEF4444),
                       shape: BoxShape.circle,
-                      boxShadow: [BoxShadow(color: const Color(0xFFEF4444).withOpacity(0.5 * _animController.value), blurRadius: 6)],
+                      boxShadow: [BoxShadow(color: const Color(0xFFEF4444).withValues(alpha: 0.5 * _animController.value), blurRadius: 6)],
                     ),
                   ),
                   const SizedBox(width: 6),
@@ -101,7 +101,7 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
             ...alerts.map((alert) => _buildAlertCard(alert)),
 
             const SizedBox(height: 24),
-            Text('Your Response History', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white.withOpacity(0.5))),
+            Text('Your Response History', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white.withValues(alpha: 0.5))),
             const SizedBox(height: 12),
 
             // Past responses
@@ -112,8 +112,8 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
                   width: 40, height: 40,
                   decoration: BoxDecoration(
                     color: r['status'] == 'Donated'
-                        ? const Color(0xFF10B981).withOpacity(0.12)
-                        : const Color(0xFF64748B).withOpacity(0.12),
+                        ? const Color(0xFF10B981).withValues(alpha: 0.12)
+                        : const Color(0xFF64748B).withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(
@@ -122,7 +122,7 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
                   ),
                 ),
                 title: Text(r['hospital'], style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                subtitle: Text('${r['date']} • ${r['group']} • ${r['status']}', style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.4))),
+                subtitle: Text('${r['date']} • ${r['group']} • ${r['status']}', style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.4))),
                 trailing: r['tokens'] > 0
                     ? Text('+${r['tokens']}🪙', style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFFF59E0B)))
                     : null,
@@ -144,14 +144,14 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: isCritical
-                ? [const Color(0xFFEF4444).withOpacity(0.12), const Color(0xFF780000).withOpacity(0.15)]
-                : [const Color(0xFFF59E0B).withOpacity(0.08), const Color(0xFFF59E0B).withOpacity(0.04)],
+                ? [const Color(0xFFEF4444).withValues(alpha: 0.12), const Color(0xFF780000).withValues(alpha: 0.15)]
+                : [const Color(0xFFF59E0B).withValues(alpha: 0.08), const Color(0xFFF59E0B).withValues(alpha: 0.04)],
           ),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isCritical
-                ? Color.lerp(const Color(0xFFEF4444).withOpacity(0.2), const Color(0xFFEF4444).withOpacity(0.5), _animController.value)!
-                : const Color(0xFFF59E0B).withOpacity(0.2),
+                ? Color.lerp(const Color(0xFFEF4444).withValues(alpha: 0.2), const Color(0xFFEF4444).withValues(alpha: 0.5), _animController.value)!
+                : const Color(0xFFF59E0B).withValues(alpha: 0.2),
           ),
         ),
         padding: const EdgeInsets.all(16),
@@ -172,14 +172,14 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(alert['hospital'], style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-                      Text('${alert['distance']} • ETA ${alert['eta']}', style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5))),
+                      Text('${alert['distance']} • ETA ${alert['eta']}', style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.5))),
                     ],
                   ),
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: isCritical ? const Color(0xFFEF4444).withOpacity(0.15) : const Color(0xFFF59E0B).withOpacity(0.15),
+                    color: isCritical ? const Color(0xFFEF4444).withValues(alpha: 0.15) : const Color(0xFFF59E0B).withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -203,14 +203,14 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
                     children: [
                       Text(
                         '${alert['accepted']} / ${alert['target']} donors accepted',
-                        style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
+                        style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.5)),
                       ),
                       const SizedBox(height: 6),
                       ClipRRect(
                         borderRadius: BorderRadius.circular(4),
                         child: LinearProgressIndicator(
                           value: (alert['accepted'] as int) / (alert['target'] as int),
-                          backgroundColor: Colors.white.withOpacity(0.06),
+                          backgroundColor: Colors.white.withValues(alpha: 0.06),
                           valueColor: AlwaysStoppedAnimation<Color>(
                             isCritical ? const Color(0xFFEF4444) : const Color(0xFFF59E0B),
                           ),
@@ -221,7 +221,7 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
                   ),
                 ),
                 const SizedBox(width: 16),
-                Text(alert['time'], style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.3))),
+                Text(alert['time'], style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.3))),
               ],
             ),
             const SizedBox(height: 14),
@@ -233,13 +233,13 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
                   margin: const EdgeInsets.only(right: 6),
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.06),
+                    color: Colors.white.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: Text(ch, style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.5))),
+                  child: Text(ch, style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.5))),
                 )),
                 const Spacer(),
-                Text('3x Rakt-Tokens', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFFF59E0B).withOpacity(0.7))),
+                Text('3x Rakt-Tokens', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFFF59E0B).withValues(alpha: 0.7))),
               ],
             ),
             const SizedBox(height: 14),
@@ -251,7 +251,7 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
                   child: OutlinedButton(
                     onPressed: () {},
                     style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: Colors.white.withOpacity(0.1)),
+                      side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                     child: const Text('Decline', style: TextStyle(color: Colors.white54)),

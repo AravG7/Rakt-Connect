@@ -56,7 +56,7 @@ class ProfileScreen extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFD90429).withOpacity(0.12),
+                        color: const Color(0xFFD90429).withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Text(
@@ -117,7 +117,7 @@ class ProfileScreen extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF10B981).withOpacity(0.12),
+                            color: const Color(0xFF10B981).withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: const Text('DPDP Act 2023', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF10B981))),
@@ -134,7 +134,7 @@ class ProfileScreen extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.03),
+                        color: Colors.white.withValues(alpha: 0.03),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Row(
@@ -144,7 +144,7 @@ class ProfileScreen extends StatelessWidget {
                           Expanded(
                             child: Text(
                               'Zero PII stored on blockchain. Only hashed references. Full DPDP Act 2023 compliance.',
-                              style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.4), height: 1.4),
+                              style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4), height: 1.4),
                             ),
                           ),
                         ],
@@ -198,13 +198,13 @@ class ProfileScreen extends StatelessWidget {
       children: [
         Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: color)),
         const SizedBox(height: 2),
-        Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.4))),
+        Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.white.withValues(alpha: 0.4))),
       ],
     );
   }
 
   Widget _divider() {
-    return Container(width: 1, height: 30, color: Colors.white.withOpacity(0.06));
+    return Container(width: 1, height: 30, color: Colors.white.withValues(alpha: 0.06));
   }
 
   Widget _linkedId(IconData icon, String service, String detail, bool linked, Color color) {
@@ -215,7 +215,7 @@ class ProfileScreen extends StatelessWidget {
           Container(
             width: 36, height: 36,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
+              color: color.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(icon, size: 18, color: color),
@@ -226,7 +226,7 @@ class ProfileScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(service, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                Text(detail, style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.4))),
+                Text(detail, style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4))),
               ],
             ),
           ),
@@ -245,12 +245,12 @@ class ProfileScreen extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: [
-          Expanded(child: Text(label, style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.7)))),
+          Expanded(child: Text(label, style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.7)))),
           Switch(
             value: value,
             onChanged: (_) {},
-            activeColor: const Color(0xFF10B981),
-            inactiveTrackColor: Colors.white.withOpacity(0.06),
+            activeThumbColor: const Color(0xFF10B981),
+            inactiveTrackColor: Colors.white.withValues(alpha: 0.06),
           ),
         ],
       ),
@@ -266,8 +266,8 @@ class ProfileScreen extends StatelessWidget {
             width: 36, height: 36,
             decoration: BoxDecoration(
               color: unlocked
-                  ? const Color(0xFFF59E0B).withOpacity(0.12)
-                  : Colors.white.withOpacity(0.04),
+                  ? const Color(0xFFF59E0B).withValues(alpha: 0.12)
+                  : Colors.white.withValues(alpha: 0.04),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(icon, size: 18, color: unlocked ? const Color(0xFFF59E0B) : const Color(0xFF64748B)),
@@ -278,12 +278,12 @@ class ProfileScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: unlocked ? Colors.white : const Color(0xFF64748B))),
-                Text(subtitle, style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(unlocked ? 0.4 : 0.2))),
+                Text(subtitle, style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: unlocked ? 0.4 : 0.2))),
               ],
             ),
           ),
           if (unlocked) const Icon(Icons.check_circle_rounded, size: 18, color: Color(0xFF10B981))
-          else Icon(Icons.lock_rounded, size: 16, color: Colors.white.withOpacity(0.2)),
+          else Icon(Icons.lock_rounded, size: 16, color: Colors.white.withValues(alpha: 0.2)),
         ],
       ),
     );
@@ -293,8 +293,8 @@ class ProfileScreen extends StatelessWidget {
     return ListTile(
       leading: Icon(icon, color: color, size: 22),
       title: Text(label, style: TextStyle(fontSize: 14, color: color)),
-      subtitle: detail.isNotEmpty ? Text(detail, style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.3))) : null,
-      trailing: Icon(Icons.chevron_right_rounded, color: Colors.white.withOpacity(0.2)),
+      subtitle: detail.isNotEmpty ? Text(detail, style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.3))) : null,
+      trailing: Icon(Icons.chevron_right_rounded, color: Colors.white.withValues(alpha: 0.2)),
       onTap: () {},
     );
   }

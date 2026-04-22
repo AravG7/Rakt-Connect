@@ -142,7 +142,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF59E0B).withOpacity(0.12),
+                    color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text('🏅 $tier', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFFF59E0B))),
@@ -171,7 +171,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
               ),
             ),
             const SizedBox(height: 8),
-            Text('Bedside Scan QR', style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5))),
+            Text('Bedside Scan QR', style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.5))),
           ],
         ),
       ),
@@ -188,7 +188,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
             const SizedBox(height: 6),
             Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: color)),
             const SizedBox(height: 2),
-            Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.5))),
+            Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.white.withValues(alpha: 0.5))),
           ],
         ),
       ),
@@ -201,8 +201,8 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
           gradient: isEligible
-              ? LinearGradient(colors: [const Color(0xFF10B981).withOpacity(0.08), const Color(0xFF10B981).withOpacity(0.02)])
-              : LinearGradient(colors: [const Color(0xFFF59E0B).withOpacity(0.08), const Color(0xFFF59E0B).withOpacity(0.02)]),
+              ? LinearGradient(colors: [const Color(0xFF10B981).withValues(alpha: 0.08), const Color(0xFF10B981).withValues(alpha: 0.02)])
+              : LinearGradient(colors: [const Color(0xFFF59E0B).withValues(alpha: 0.08), const Color(0xFFF59E0B).withValues(alpha: 0.02)]),
         ),
         padding: const EdgeInsets.all(20),
         child: Row(
@@ -210,7 +210,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
             Container(
               width: 48, height: 48,
               decoration: BoxDecoration(
-                color: (isEligible ? const Color(0xFF10B981) : const Color(0xFFF59E0B)).withOpacity(0.12),
+                color: (isEligible ? const Color(0xFF10B981) : const Color(0xFFF59E0B)).withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
@@ -234,7 +234,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                   const SizedBox(height: 2),
                   Text(
                     isEligible ? '90-day gap completed — ready to donate' : 'Next eligible: $nextEligible',
-                    style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5)),
+                    style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.5)),
                   ),
                 ],
               ),
@@ -273,13 +273,13 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
           children: [
             const Text('Loyalty Tier Progress', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
-            Text('$raktTokens / 3,000 tokens to Elite', style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5))),
+            Text('$raktTokens / 3,000 tokens to Elite', style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.5))),
             const SizedBox(height: 14),
             ClipRRect(
               borderRadius: BorderRadius.circular(6),
               child: LinearProgressIndicator(
                 value: progress,
-                backgroundColor: Colors.white.withOpacity(0.06),
+                backgroundColor: Colors.white.withValues(alpha: 0.06),
                 valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFF59E0B)),
                 minHeight: 8,
               ),
@@ -291,7 +291,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                 t['name'] as String,
                 style: TextStyle(
                   fontSize: 10, fontWeight: FontWeight.w600,
-                  color: (t['name'] == tier) ? (t['color'] as Color) : Colors.white.withOpacity(0.3),
+                  color: (t['name'] == tier) ? (t['color'] as Color) : Colors.white.withValues(alpha: 0.3),
                 ),
               )).toList(),
             ),
@@ -306,7 +306,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          gradient: LinearGradient(colors: [const Color(0xFFD90429).withOpacity(0.08), const Color(0xFFD90429).withOpacity(0.02)]),
+          gradient: LinearGradient(colors: [const Color(0xFFD90429).withValues(alpha: 0.08), const Color(0xFFD90429).withValues(alpha: 0.02)]),
         ),
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -325,10 +325,10 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
             const SizedBox(height: 12),
             Text(
               '"Your O- donation on Jan 15th was used in an emergency C-section at Apollo HSR. Both mother and baby are healthy. Thank you for being a hero."',
-              style: TextStyle(fontSize: 13, fontStyle: FontStyle.italic, color: Colors.white.withOpacity(0.7), height: 1.5),
+              style: TextStyle(fontSize: 13, fontStyle: FontStyle.italic, color: Colors.white.withValues(alpha: 0.7), height: 1.5),
             ),
             const SizedBox(height: 8),
-            Text('— Dr. Sharma, Apollo Hospital HSR Layout', style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.4), fontWeight: FontWeight.w600)),
+            Text('— Dr. Sharma, Apollo Hospital HSR Layout', style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4), fontWeight: FontWeight.w600)),
           ],
         ),
       ),
@@ -367,13 +367,13 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
           Container(
             width: 48, height: 48,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
+              color: color.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(icon, color: color, size: 24),
           ),
           const SizedBox(height: 6),
-          Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.6))),
+          Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.white.withValues(alpha: 0.6))),
         ],
       ),
     );
@@ -404,22 +404,22 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(color: const Color(0xFFEF4444).withOpacity(0.2), borderRadius: BorderRadius.circular(8)),
+              decoration: BoxDecoration(color: const Color(0xFFEF4444).withValues(alpha: 0.2), borderRadius: BorderRadius.circular(8)),
               child: const Text('O- BLOOD NEEDED', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFFEF4444))),
             ),
             const SizedBox(height: 16),
             Text(
               'Apollo Hospital HSR Layout needs O- blood urgently. You are 4.2 km away. As a registered O- donor, your donation could save a life.',
-              style: TextStyle(fontSize: 14, color: Colors.white.withOpacity(0.8), height: 1.5),
+              style: TextStyle(fontSize: 14, color: Colors.white.withValues(alpha: 0.8), height: 1.5),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.location_on, size: 14, color: Colors.white.withOpacity(0.5)),
+                Icon(Icons.location_on, size: 14, color: Colors.white.withValues(alpha: 0.5)),
                 const SizedBox(width: 4),
-                Text('4.2 km • ETA 18 min', style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.5))),
+                Text('4.2 km • ETA 18 min', style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.5))),
               ],
             ),
             const SizedBox(height: 24),

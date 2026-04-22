@@ -2,10 +2,17 @@ const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
+const { stqcMiddleware, apiLimiter, logger, enforceSSL, auditLogger } = require('./middleware/stqcSecurity');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Apply STQC Middleware
+app.use(enforceSSL);
+app.use(apiLimiter);
+app.use(stqcMiddleware);
+app.use(auditLogger);
 
 const PORT = process.env.PORT || 3001;
 
@@ -473,6 +480,34 @@ app.get('/audit/evidence-bundle/:unitId', (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// TAX AUTOMATION ROUTES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+app.post('/tax/generate-80g', (req, res) => {
+  const { donorDid, unitId } = req.body;
+  
+  if (!donorDid || !unitId) {
+    return res.status(400).json({ error: 'donorDid and unitId are required' });
+  }
+
+  const taxReceipt = {
+    receiptNumber: `80G-2026-${unitId.substring(0, 8)}`,
+    donorName: "Donor_" + donorDid.substring(9, 15),
+    panNumber: "ENCRYPTED_PAN_HASH",
+    amountValue: "0.00",
+    exemptionType: "100% Social Contribution",
+    timestamp: new Date().toISOString()
+  };
+
+  logAudit('TAX_80G_GENERATED', donorDid, unitId, 'Generated 80G Tax receipt for donor');
+
+  res.status(201).json({
+    message: '80G Tax receipt generated successfully',
+    receipt: taxReceipt
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // INSURANCE ROUTES (PRD Section 4.10)
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -498,13 +533,37 @@ app.post('/insurance/claim', (req, res) => {
 // AI INTEGRATION ROUTES (PRD Section 7)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+const fetch = require('node-fetch');
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
+
 // GET /ai/predict/:hospitalId — Proxy to AI Microservice
 app.get('/ai/predict/:hospitalId', async (req, res) => {
-  // In production, this proxies to the Python FastAPI AI microservice
   const { bloodGroup } = req.query;
+  const hospitalId = req.params.hospitalId;
 
+  try {
+    const response = await fetch(`${AI_SERVICE_URL}/predict/shortage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        hospital_id: hospitalId,
+        blood_group: bloodGroup || 'O-',
+        forecast_horizon_hours: 48
+      }),
+      timeout: 3000
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return res.json(data);
+    }
+  } catch (error) {
+    console.warn('AI Microservice unavailable, using mock data for /ai/predict');
+  }
+
+  // Fallback Mock
   res.json({
-    hospitalId: req.params.hospitalId,
+    hospitalId,
     bloodGroup: bloodGroup || 'O-',
     forecastHours: 48,
     predictedDemandUnits: Math.floor(Math.random() * 20) + 5,
@@ -513,13 +572,31 @@ app.get('/ai/predict/:hospitalId', async (req, res) => {
     model: 'Temporal Fusion Transformer (TFT)',
     confidence: +(Math.random() * 0.15 + 0.82).toFixed(2),
     triggerBroadcast: Math.random() > 0.7,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    isMock: true
   });
 });
 
 // GET /ai/heatmap/state — GIS Red/Green zone data
-app.get('/ai/heatmap/state', (req, res) => {
+app.get('/ai/heatmap/state', async (req, res) => {
+  const { state } = req.query;
+  
+  try {
+    const url = new URL(`${AI_SERVICE_URL}/heatmap/state`);
+    if (state) url.searchParams.append('state', state);
+
+    const response = await fetch(url.toString(), { timeout: 3000 });
+    if (response.ok) {
+      const data = await response.json();
+      return res.json(data);
+    }
+  } catch (error) {
+    console.warn('AI Microservice unavailable, using mock data for /ai/heatmap/state');
+  }
+
+  // Fallback Mock
   res.json({
+    state: state || 'Karnataka',
     zones: [
       { name: 'North Bangalore', status: 'GREEN', surplus: 22, risk: 'Low' },
       { name: 'South Bangalore', status: 'YELLOW', surplus: -4, risk: 'Moderate' },
@@ -528,7 +605,8 @@ app.get('/ai/heatmap/state', (req, res) => {
       { name: 'Central', status: 'YELLOW', surplus: -2, risk: 'Moderate' },
     ],
     model: 'TFT + Google Maps traffic data',
-    lastUpdated: new Date().toISOString()
+    lastUpdated: new Date().toISOString(),
+    isMock: true
   });
 });
 
@@ -992,6 +1070,13 @@ app.get('/hcx/stats', (req, res) => {
     avgApprovalTimeMs: allClaims.reduce((sum, c) => sum + (c.kpiApprovalMs || 0), 0) / (allClaims.length || 1)
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ERROR HANDLING
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const errorHandler = require('./src/utils/errorHandler');
+app.use(errorHandler);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // START SERVER

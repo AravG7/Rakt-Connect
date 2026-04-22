@@ -110,6 +110,8 @@ jobs:
             image: api-gateway
           - context: ai-microservice
             image: ai-microservice
+          - context: web-dashboard
+            image: web-dashboard
     steps:
       - uses: actions/checkout@v4
       - name: Downcase IMAGE_PREFIX

@@ -80,11 +80,11 @@ class _RareRegistryScreenState extends State<RareRegistryScreen>
             borderRadius: BorderRadius.circular(20),
             gradient: LinearGradient(
               colors: [
-                const Color(0xFF6D28D9).withOpacity(0.3 + _pulseController.value * 0.1),
-                const Color(0xFF4C1D95).withOpacity(0.2),
+                const Color(0xFF6D28D9).withValues(alpha: 0.3 + _pulseController.value * 0.1),
+                const Color(0xFF4C1D95).withValues(alpha: 0.2),
               ],
             ),
-            border: Border.all(color: const Color(0xFF7C3AED).withOpacity(0.4)),
+            border: Border.all(color: const Color(0xFF7C3AED).withValues(alpha: 0.4)),
           ),
           padding: const EdgeInsets.all(20),
           child: Column(
@@ -94,7 +94,7 @@ class _RareRegistryScreenState extends State<RareRegistryScreen>
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF7C3AED).withOpacity(0.2),
+                      color: const Color(0xFF7C3AED).withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: const Text('🧬', style: TextStyle(fontSize: 28)),
@@ -141,7 +141,7 @@ class _RareRegistryScreenState extends State<RareRegistryScreen>
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.05),
+                  color: Colors.white.withValues(alpha: 0.05),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
@@ -168,11 +168,11 @@ class _RareRegistryScreenState extends State<RareRegistryScreen>
         borderRadius: BorderRadius.circular(16),
         gradient: LinearGradient(
           colors: [
-            const Color(0xFFDC2626).withOpacity(0.15),
-            const Color(0xFFDC2626).withOpacity(0.05),
+            const Color(0xFFDC2626).withValues(alpha: 0.15),
+            const Color(0xFFDC2626).withValues(alpha: 0.05),
           ],
         ),
-        border: Border.all(color: const Color(0xFFDC2626).withOpacity(0.3)),
+        border: Border.all(color: const Color(0xFFDC2626).withValues(alpha: 0.3)),
       ),
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -188,7 +188,7 @@ class _RareRegistryScreenState extends State<RareRegistryScreen>
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                        color: const Color(0xFFEF4444).withOpacity(0.5),
+                        color: const Color(0xFFEF4444).withValues(alpha: 0.5),
                         blurRadius: 8)
                   ],
                 ),
@@ -320,10 +320,10 @@ class _RareRegistryScreenState extends State<RareRegistryScreen>
                 child: Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF7C3AED).withOpacity(0.06),
+                    color: const Color(0xFF7C3AED).withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                        color: const Color(0xFF7C3AED).withOpacity(0.12)),
+                        color: const Color(0xFF7C3AED).withValues(alpha: 0.12)),
                   ),
                   child: Row(
                     children: [
@@ -381,7 +381,7 @@ class _RareRegistryScreenState extends State<RareRegistryScreen>
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.03),
+                  color: Colors.white.withValues(alpha: 0.03),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Row(
@@ -413,7 +413,7 @@ class _RareRegistryScreenState extends State<RareRegistryScreen>
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF10B981).withOpacity(0.1),
+                          color: const Color(0xFF10B981).withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text('${s['tokens']} RKT',
@@ -429,7 +429,7 @@ class _RareRegistryScreenState extends State<RareRegistryScreen>
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: const Color(0xFF7C3AED).withOpacity(0.06),
+              color: const Color(0xFF7C3AED).withValues(alpha: 0.06),
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Row(
@@ -464,7 +464,7 @@ class _RareRegistryScreenState extends State<RareRegistryScreen>
 
   Widget _divider() {
     return Container(
-        width: 1, height: 30, color: Colors.white.withOpacity(0.1));
+        width: 1, height: 30, color: Colors.white.withValues(alpha: 0.1));
   }
 
   Widget _phenotypeRow(String label, String value, Color color) {
@@ -498,9 +498,9 @@ class _RareRegistryScreenState extends State<RareRegistryScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.25)),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
       ),
       child: Text(text,
           style: TextStyle(

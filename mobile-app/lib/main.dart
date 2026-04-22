@@ -44,16 +44,16 @@ class RaktConnectApp extends StatelessWidget {
           error: const Color(0xFFEF4444),
           onPrimary: Colors.white,
           onSurface: const Color(0xFFF1F5F9),
-          outline: Colors.white.withOpacity(0.06),
+          outline: Colors.white.withValues(alpha: 0.06),
         ),
         scaffoldBackgroundColor: const Color(0xFF0A0E1A),
         fontFamily: 'Inter',
-        cardTheme: CardTheme(
+        cardTheme: CardThemeData(
           color: const Color(0xFF1A1F35),
           elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: Colors.white.withOpacity(0.06)),
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
           ),
         ),
         appBarTheme: const AppBarTheme(
@@ -110,7 +110,7 @@ class _MainNavigationState extends State<MainNavigation> {
       body: IndexedStack(index: _currentIndex, children: _screens),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: Colors.white.withOpacity(0.06))),
+          border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.06))),
         ),
         child: BottomNavigationBar(
           currentIndex: _currentIndex,

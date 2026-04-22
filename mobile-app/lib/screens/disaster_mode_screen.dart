@@ -143,11 +143,11 @@ class _DisasterModeScreenState extends State<DisasterModeScreen>
         borderRadius: BorderRadius.circular(16),
         gradient: LinearGradient(
           colors: [
-            const Color(0xFFDC2626).withOpacity(0.12),
-            const Color(0xFFDC2626).withOpacity(0.04),
+            const Color(0xFFDC2626).withValues(alpha: 0.12),
+            const Color(0xFFDC2626).withValues(alpha: 0.04),
           ],
         ),
-        border: Border.all(color: const Color(0xFFDC2626).withOpacity(0.3)),
+        border: Border.all(color: const Color(0xFFDC2626).withValues(alpha: 0.3)),
       ),
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -171,7 +171,7 @@ class _DisasterModeScreenState extends State<DisasterModeScreen>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF59E0B).withOpacity(0.15),
+                  color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: const Text('NATURAL DISASTER',
@@ -209,8 +209,8 @@ class _DisasterModeScreenState extends State<DisasterModeScreen>
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        color: const Color(0xFFF59E0B).withOpacity(0.08),
-        border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.25)),
+        color: const Color(0xFFF59E0B).withValues(alpha: 0.08),
+        border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.25)),
       ),
       padding: const EdgeInsets.all(16),
       child: Row(
@@ -267,7 +267,7 @@ class _DisasterModeScreenState extends State<DisasterModeScreen>
                 child: Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.03),
+                    color: Colors.white.withValues(alpha: 0.03),
                     borderRadius: BorderRadius.circular(10),
                     border: Border(
                         left: BorderSide(
@@ -299,8 +299,8 @@ class _DisasterModeScreenState extends State<DisasterModeScreen>
                             horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
                           color: o['status'] == 'ON'
-                              ? const Color(0xFF10B981).withOpacity(0.12)
-                              : const Color(0xFF6B7280).withOpacity(0.12),
+                              ? const Color(0xFF10B981).withValues(alpha: 0.12)
+                              : const Color(0xFF6B7280).withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(o['status'] as String,
@@ -326,11 +326,11 @@ class _DisasterModeScreenState extends State<DisasterModeScreen>
         borderRadius: BorderRadius.circular(16),
         gradient: LinearGradient(
           colors: [
-            const Color(0xFFDC2626).withOpacity(0.15),
-            const Color(0xFFDC2626).withOpacity(0.05),
+            const Color(0xFFDC2626).withValues(alpha: 0.15),
+            const Color(0xFFDC2626).withValues(alpha: 0.05),
           ],
         ),
-        border: Border.all(color: const Color(0xFFDC2626).withOpacity(0.3)),
+        border: Border.all(color: const Color(0xFFDC2626).withValues(alpha: 0.3)),
       ),
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -410,7 +410,7 @@ class _DisasterModeScreenState extends State<DisasterModeScreen>
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.03),
+                  color: Colors.white.withValues(alpha: 0.03),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Row(
@@ -454,7 +454,7 @@ class _DisasterModeScreenState extends State<DisasterModeScreen>
                                 : b['status'] == 'IN_TRANSIT'
                                     ? const Color(0xFF3B82F6)
                                     : const Color(0xFFF59E0B))
-                            .withOpacity(0.12),
+                            .withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(

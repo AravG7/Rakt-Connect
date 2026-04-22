@@ -1,4 +1,6 @@
 "use client";
+import { ActivityFeed } from "../../components/compliance/ActivityFeed";
+import { TaxReport } from "../../components/compliance/TaxReport";
 
 const complianceForms = [
   { form: "Form 17", desc: "Donor Registry", units: 1247, lastGenerated: "Auto (every donation)", status: "active" },
@@ -187,6 +189,12 @@ export default function CompliancePage() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* New Components */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6 animate-fade-in delay-5">
+        <TaxReport />
+        <ActivityFeed />
       </div>
     </div>
   );

@@ -53,7 +53,7 @@ class DonationHistoryScreen extends StatelessWidget {
             margin: const EdgeInsets.only(right: 12),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: const Color(0xFFF59E0B).withOpacity(0.12),
+              color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
@@ -92,8 +92,8 @@ class DonationHistoryScreen extends StatelessWidget {
                           width: 44, height: 44,
                           decoration: BoxDecoration(
                             color: isExpired
-                                ? Colors.white.withOpacity(0.06)
-                                : const Color(0xFFD90429).withOpacity(0.12),
+                                ? Colors.white.withValues(alpha: 0.06)
+                                : const Color(0xFFD90429).withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Center(
@@ -119,7 +119,7 @@ class DonationHistoryScreen extends StatelessWidget {
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFEF4444).withOpacity(0.12),
+                                        color: const Color(0xFFEF4444).withValues(alpha: 0.12),
                                         borderRadius: BorderRadius.circular(4),
                                       ),
                                       child: const Text('⚡ Emergency', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Color(0xFFEF4444))),
@@ -130,7 +130,7 @@ class DonationHistoryScreen extends StatelessWidget {
                               const SizedBox(height: 2),
                               Text(
                                 '${d['date']} • ${d['component']} • ${d['volume']}',
-                                style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.4)),
+                                style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4)),
                               ),
                             ],
                           ),
@@ -142,8 +142,8 @@ class DonationHistoryScreen extends StatelessWidget {
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                               decoration: BoxDecoration(
                                 color: isExpired
-                                    ? const Color(0xFFEF4444).withOpacity(0.12)
-                                    : const Color(0xFF10B981).withOpacity(0.12),
+                                    ? const Color(0xFFEF4444).withValues(alpha: 0.12)
+                                    : const Color(0xFF10B981).withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
@@ -171,7 +171,7 @@ class DonationHistoryScreen extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.03),
+                          color: Colors.white.withValues(alpha: 0.03),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Row(
@@ -181,7 +181,7 @@ class DonationHistoryScreen extends StatelessWidget {
                             Expanded(
                               child: Text(
                                 d['impact'] as String,
-                                style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.white.withOpacity(0.5)),
+                                style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.white.withValues(alpha: 0.5)),
                               ),
                             ),
                           ],
@@ -193,15 +193,15 @@ class DonationHistoryScreen extends StatelessWidget {
                       children: [
                         Text(
                           'Tx: ${d['txHash']}',
-                          style: TextStyle(fontSize: 10, fontFamily: 'monospace', color: Colors.white.withOpacity(0.25)),
+                          style: TextStyle(fontSize: 10, fontFamily: 'monospace', color: Colors.white.withValues(alpha: 0.25)),
                         ),
                         const Spacer(),
                         if (d['receipt80g'] == true)
                           Row(
                             children: [
-                              Icon(Icons.receipt_long_rounded, size: 12, color: const Color(0xFF3B82F6).withOpacity(0.5)),
+                              Icon(Icons.receipt_long_rounded, size: 12, color: const Color(0xFF3B82F6).withValues(alpha: 0.5)),
                               const SizedBox(width: 4),
-                              Text('80G Receipt', style: TextStyle(fontSize: 10, color: const Color(0xFF3B82F6).withOpacity(0.5))),
+                              Text('80G Receipt', style: TextStyle(fontSize: 10, color: const Color(0xFF3B82F6).withValues(alpha: 0.5))),
                             ],
                           ),
                       ],
@@ -244,7 +244,7 @@ class DonationHistoryScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(d['id'] as String, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-                    Text('${d['component']} • ${d['volume']}', style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.5))),
+                    Text('${d['component']} • ${d['volume']}', style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.5))),
                   ],
                 ),
               ],
@@ -284,7 +284,7 @@ class DonationHistoryScreen extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          SizedBox(width: 120, child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.4)))),
+          SizedBox(width: 120, child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white.withValues(alpha: 0.4)))),
           Expanded(child: Text(value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600))),
         ],
       ),

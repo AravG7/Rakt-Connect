@@ -81,7 +81,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
             decoration: BoxDecoration(
               color: const Color(0xFF111827),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white.withOpacity(0.06)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
             ),
             child: Stack(
               alignment: Alignment.center,
@@ -91,7 +91,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                   width: 220, height: 220,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFD90429).withOpacity(0.5), width: 2),
+                    border: Border.all(color: const Color(0xFFD90429).withValues(alpha: 0.5), width: 2),
                   ),
                 ),
                 // Corner accents
@@ -106,7 +106,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                     children: [
                       const CircularProgressIndicator(color: Color(0xFFD90429)),
                       const SizedBox(height: 16),
-                      Text('Verifying on Blockchain...', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.7))),
+                      Text('Verifying on Blockchain...', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white.withValues(alpha: 0.7))),
                     ],
                   ),
 
@@ -114,9 +114,9 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                   Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.qr_code_scanner_rounded, size: 64, color: Colors.white.withOpacity(0.15)),
+                      Icon(Icons.qr_code_scanner_rounded, size: 64, color: Colors.white.withValues(alpha: 0.15)),
                       const SizedBox(height: 12),
-                      Text('Point camera at blood unit QR code', style: TextStyle(fontSize: 14, color: Colors.white.withOpacity(0.4))),
+                      Text('Point camera at blood unit QR code', style: TextStyle(fontSize: 14, color: Colors.white.withValues(alpha: 0.4))),
                     ],
                   ),
               ],
@@ -148,7 +148,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                 const SizedBox(height: 8),
                 Text(
                   'Scan verifies: Blood group • Lab results • Cold chain • Expiry • Chain of custody',
-                  style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.3), height: 1.4),
+                  style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.3), height: 1.4),
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -178,7 +178,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
             child: Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
-                gradient: LinearGradient(colors: [const Color(0xFF10B981).withOpacity(0.08), const Color(0xFF10B981).withOpacity(0.02)]),
+                gradient: LinearGradient(colors: [const Color(0xFF10B981).withValues(alpha: 0.08), const Color(0xFF10B981).withValues(alpha: 0.02)]),
               ),
               padding: const EdgeInsets.all(20),
               child: Row(
@@ -186,7 +186,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                   Container(
                     width: 48, height: 48,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF10B981).withOpacity(0.12),
+                      color: const Color(0xFF10B981).withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(Icons.verified_rounded, color: Color(0xFF10B981), size: 28),
@@ -230,14 +230,14 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(unit['id'], style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-                            Text('${unit['component']} • ${unit['volume']}', style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.5))),
+                            Text('${unit['component']} • ${unit['volume']}', style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.5))),
                           ],
                         ),
                       ),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF59E0B).withOpacity(0.12),
+                          color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(unit['state'], style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFFF59E0B))),
@@ -271,7 +271,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFD90429).withOpacity(0.12),
+                          color: const Color(0xFFD90429).withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text('${custodyChain.length} tx', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFFD90429))),
@@ -295,12 +295,12 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                                 Container(
                                   width: 28, height: 28,
                                   decoration: BoxDecoration(
-                                    color: (step['color'] as Color).withOpacity(0.12),
+                                    color: (step['color'] as Color).withValues(alpha: 0.12),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Icon(step['icon'] as IconData, size: 16, color: step['color'] as Color),
                                 ),
-                                if (!isLast) Expanded(child: Container(width: 2, color: Colors.white.withOpacity(0.06))),
+                                if (!isLast) Expanded(child: Container(width: 2, color: Colors.white.withValues(alpha: 0.06))),
                               ],
                             ),
                           ),
@@ -312,7 +312,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(step['state'], style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: step['color'] as Color)),
-                                  Text('${step['time']} • ${step['actor']}', style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.4))),
+                                  Text('${step['time']} • ${step['actor']}', style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.4))),
                                 ],
                               ),
                             ),
@@ -338,7 +338,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
         children: [
           SizedBox(
             width: 110,
-            child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.4))),
+            child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white.withValues(alpha: 0.4))),
           ),
           Expanded(
             child: Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
