@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 const unitData = {
   id: "UNIT-X7K2",
   group: "O-",
@@ -49,7 +51,7 @@ export default function UnitLifecycle() {
     <div>
       <div className="page-header">
         <div className="page-breadcrumb">
-          <a href="/">Dashboard</a> <span>/</span> <span>Unit Lifecycle</span>
+          <Link href="/">Dashboard</Link> <span>/</span> <span>Unit Lifecycle</span>
         </div>
         <h1 className="page-title">Blood Unit Lifecycle Tracker</h1>
         <p className="page-subtitle">Full chain-of-custody view — every state change is an immutable on-chain transaction</p>

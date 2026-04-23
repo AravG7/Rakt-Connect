@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import Link from 'next/link';
 
 export default function DisasterModePage() {
   const [activeTab, setActiveTab] = useState('status');
@@ -46,7 +47,7 @@ export default function DisasterModePage() {
   return (
     <div>
       <div className="page-header">
-        <div className="page-breadcrumb"><a href="/">Dashboard</a> <span>/</span> Disaster Mode</div>
+        <div className="page-breadcrumb"><Link href="/">Dashboard</Link> <span>/</span> Disaster Mode</div>
         <div className="flex-between">
           <div>
             <h1 className="page-title">⚠️ Black Swan Protocol</h1>

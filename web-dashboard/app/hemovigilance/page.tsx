@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 
 const transfusionChecks = [
   { id: "HV-001", unit: "UNIT-X7K2", patient: "ABHA-91-XXXX-1156", transfusedAt: "Today, 12:30 PM", followUpDue: "Tomorrow, 12:30 PM", status: "pending", doctor: "Dr. Sharma", ward: "ICU Bed 12" },
@@ -30,7 +31,7 @@ export default function HemovigilancePage() {
     <div>
       <div className="page-header">
         <div className="page-breadcrumb">
-          <a href="/">Dashboard</a> <span>/</span> <span>Hemovigilance</span>
+          <Link href="/">Dashboard</Link> <span>/</span> <span>Hemovigilance</span>
         </div>
         <h1 className="page-title">Post-Transfusion Hemovigilance</h1>
         <p className="page-subtitle">Mandatory 24-hour follow-up surveillance with auto-NIB notification on adverse events</p>

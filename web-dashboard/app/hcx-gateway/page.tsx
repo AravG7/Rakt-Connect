@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import Link from 'next/link';
 
 export default function HCXGatewayPage() {
   const [activeTab, setActiveTab] = useState('overview');
@@ -44,7 +45,7 @@ export default function HCXGatewayPage() {
   return (
     <div>
       <div className="page-header">
-        <div className="page-breadcrumb"><a href="/">Dashboard</a> <span>/</span> HCX Gateway</div>
+        <div className="page-breadcrumb"><Link href="/">Dashboard</Link> <span>/</span> HCX Gateway</div>
         <div className="flex-between">
           <div>
             <h1 className="page-title">💳 HCX Gateway</h1>

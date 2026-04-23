@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import Link from 'next/link';
 
 export default function RareRegistryPage() {
   const [activeTab, setActiveTab] = useState('overview');
@@ -43,7 +44,7 @@ export default function RareRegistryPage() {
   return (
     <div>
       <div className="page-header">
-        <div className="page-breadcrumb"><a href="/">Dashboard</a> <span>/</span> Rare Registry</div>
+        <div className="page-breadcrumb"><Link href="/">Dashboard</Link> <span>/</span> Rare Registry</div>
         <div className="flex-between">
           <div>
             <h1 className="page-title">🧬 The Rare Registry</h1>

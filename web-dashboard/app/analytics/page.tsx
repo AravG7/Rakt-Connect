@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 
 const forecastData = [
   { day: "Mon", oPos: 12, oNeg: 3, aPos: 8, bPos: 6 },
@@ -38,7 +39,7 @@ export default function AnalyticsPage() {
     <div>
       <div className="page-header">
         <div className="page-breadcrumb">
-          <a href="/">Dashboard</a> <span>/</span> <span>Analytics & AI</span>
+          <Link href="/">Dashboard</Link> <span>/</span> <span>Analytics & AI</span>
         </div>
         <h1 className="page-title">Analytics & AI Predictions</h1>
         <p className="page-subtitle">Temporal Fusion Transformer demand forecasting with federated learning insights</p>

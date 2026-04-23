@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 
 const inventoryData = [
   { id: "UNIT-A12B", group: "O-", component: "Packed RBC", volume: "350ml", collected: "2026-04-02", expiry: "2026-04-18", daysLeft: 2, state: "STORED", temp: "4.1°C", source: "Apollo HSR" },
@@ -53,7 +54,7 @@ export default function InventoryControl() {
     <div>
       <div className="page-header">
         <div className="page-breadcrumb">
-          <a href="/">Dashboard</a> <span>/</span> <span>Inventory Control</span>
+          <Link href="/">Dashboard</Link> <span>/</span> <span>Inventory Control</span>
         </div>
         <div className="flex-between">
           <div>

@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { ActivityFeed } from "../../components/compliance/ActivityFeed";
 import { TaxReport } from "../../components/compliance/TaxReport";
 
@@ -42,7 +43,7 @@ export default function CompliancePage() {
     <div>
       <div className="page-header">
         <div className="page-breadcrumb">
-          <a href="/">Dashboard</a> <span>/</span> <span>Compliance</span>
+          <Link href="/">Dashboard</Link> <span>/</span> <span>Compliance</span>
         </div>
         <h1 className="page-title">Compliance & Regulatory Tools</h1>
         <p className="page-subtitle">Automated governance — Drugs & Cosmetics Act, DPDP Act 2023, IT Act 2000, NBTC Guidelines</p>

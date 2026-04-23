@@ -37,3 +37,10 @@
 {"level":"info","message":{"action":"API_ACCESS","ip":"::ffff:127.0.0.1","method":"POST","path":"/broadcast/emergency"},"service":"api-gateway","timestamp":"2026-04-22T10:14:18.431Z"}
 {"level":"info","message":{"action":"API_ACCESS","ip":"::ffff:127.0.0.1","method":"POST","path":"/broadcast/EBM-24BE6B/respond"},"service":"api-gateway","timestamp":"2026-04-22T10:14:18.436Z"}
 {"level":"info","message":{"action":"API_ACCESS","ip":"::ffff:127.0.0.1","method":"GET","path":"/ai/predict/HFR-KA-001?bloodGroup=O-"},"service":"api-gateway","timestamp":"2026-04-22T10:14:18.442Z"}
+{"level":"info","message":{"action":"API_ACCESS","ip":"::ffff:127.0.0.1","method":"GET","path":"/health"},"service":"api-gateway","timestamp":"2026-04-23T06:45:18.110Z"}
+{"level":"info","message":{"action":"API_ACCESS","ip":"::ffff:127.0.0.1","method":"POST","path":"/donor/register"},"service":"api-gateway","timestamp":"2026-04-23T06:45:18.147Z"}
+{"level":"info","message":{"action":"API_ACCESS","ip":"::ffff:127.0.0.1","method":"POST","path":"/donor/register"},"service":"api-gateway","timestamp":"2026-04-23T06:45:18.154Z"}
+{"level":"info","message":{"action":"API_ACCESS","ip":"::ffff:127.0.0.1","method":"POST","path":"/broadcast/emergency"},"service":"api-gateway","timestamp":"2026-04-23T06:45:18.161Z"}
+{"level":"info","message":{"action":"API_ACCESS","ip":"::ffff:127.0.0.1","method":"POST","path":"/broadcast/emergency"},"service":"api-gateway","timestamp":"2026-04-23T06:45:18.167Z"}
+{"level":"info","message":{"action":"API_ACCESS","ip":"::ffff:127.0.0.1","method":"POST","path":"/broadcast/EBM-C6282D/respond"},"service":"api-gateway","timestamp":"2026-04-23T06:45:18.172Z"}
+{"level":"info","message":{"action":"API_ACCESS","ip":"::ffff:127.0.0.1","method":"GET","path":"/ai/predict/HFR-KA-001?bloodGroup=O-"},"service":"api-gateway","timestamp":"2026-04-23T06:45:18.178Z"}

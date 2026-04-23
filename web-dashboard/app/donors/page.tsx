@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 
 const donors = [
   { did: "did:rakt:7a92bf01", name: "Rajesh K.", group: "O-", abha: "91-XXXX-XXXX-4821", donations: 8, tokens: 2400, tier: "Golden", lastDonation: "2026-01-15", eligible: true, nextEligible: "2026-04-15", status: "Active" },
@@ -40,7 +41,7 @@ export default function DonorManagement() {
     <div>
       <div className="page-header">
         <div className="page-breadcrumb">
-          <a href="/">Dashboard</a> <span>/</span> <span>Donor Management</span>
+          <Link href="/">Dashboard</Link> <span>/</span> <span>Donor Management</span>
         </div>
         <div className="flex-between">
           <div>

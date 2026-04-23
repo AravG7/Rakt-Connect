@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import { LiveResponseTracker } from "../../components/emergency/LiveResponseTracker";
 import { ArrivalCard } from "../../components/emergency/ArrivalCard";
 
@@ -44,7 +45,7 @@ export default function EmergencyBroadcast() {
     <div>
       <div className="page-header">
         <div className="page-breadcrumb">
-          <a href="/">Dashboard</a> <span>/</span> <span>Emergency Broadcast</span>
+          <Link href="/">Dashboard</Link> <span>/</span> <span>Emergency Broadcast</span>
         </div>
         <h1 className="page-title">Emergency Broadcast Module (EBM)</h1>
         <p className="page-subtitle">Multi-channel donor alert system with Smart Filtering, Geofencing, and Stop-Loss</p>
