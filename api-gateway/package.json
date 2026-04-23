@@ -17,8 +17,8 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.3.2",
     "fabric-ca-client": "^2.2.20",
-    "node-fetch": "^3.3.2",
-    "uuid": "^14.0.0",
+    "node-fetch": "^2.7.0",
+    "uuid": "^9.0.1",
     "winston": "^3.11.0"
   },
   "devDependencies": {
