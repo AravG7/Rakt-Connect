@@ -5,8 +5,6 @@
 # API Gateway + AI Microservice + Monitoring
 # ═══════════════════════════════════════════════════════════════════════════════
 
-version: '3.7'
-
 networks:
   rakt-network:
     name: rakt-network

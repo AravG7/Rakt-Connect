@@ -163,7 +163,10 @@ jobs:
               break
             fi
             
-            if [ $attempt -eq $max_attempts ]; then
+            sleep 5
+            attempt=$((attempt + 1))
+            
+            if [ $attempt -gt $max_attempts ]; then
               echo "❌ Services failed to become healthy in time"
               echo "=== API Gateway logs ==="
               docker compose logs api-gateway
@@ -173,9 +176,6 @@ jobs:
               docker compose ps
               exit 1
             fi
-            
-            sleep 5
-            attempt=$((attempt + 1))
           done
           
           # Cleanup
