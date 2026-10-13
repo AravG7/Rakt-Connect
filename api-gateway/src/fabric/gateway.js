@@ -6,23 +6,28 @@ const path = require('node:path');
 
 class FabricGateway {
     constructor() {
-        this.ccpPath = path.resolve(__dirname, '..', '..', '..', 'network', 'connection-hospital.json');
-        this.tlsCertPath = path.resolve(__dirname, '..', '..', '..', 'network', 'crypto-config', 'peerOrganizations', 'hospital.raktconnect.com', 'tlsca', 'tlsca.hospital.raktconnect.com-cert.pem');
-        this.peerEndpoint = 'localhost:7051';
-        this.peerHostAlias = 'peer0.hospital.raktconnect.com';
-        this.mspId = 'HospitalMSP';
+        this.ccpPath = process.env.FABRIC_CCP_PATH || path.resolve(__dirname, '..', '..', '..', 'network', 'connection-hospital.json');
+        this.tlsCertPath = process.env.FABRIC_TLS_CERT_PATH || path.resolve(__dirname, '..', '..', '..', 'network', 'crypto-config', 'peerOrganizations', 'hospital.raktconnect.com', 'tlsca', 'tlsca.hospital.raktconnect.com-cert.pem');
+        this.peerEndpoint = process.env.FABRIC_PEER_ENDPOINT || 'localhost:7051';
+        this.peerHostAlias = process.env.FABRIC_PEER_HOST_ALIAS || 'peer0.hospital.raktconnect.com';
+        this.mspId = process.env.FABRIC_MSP_ID || 'HospitalMSP';
+        this.walletPath = process.env.FABRIC_WALLET_PATH || path.resolve(__dirname, '..', '..', 'wallet', 'admin.id');
+        this.requireFabric = process.env.REQUIRE_FABRIC === 'true';
     }
 
     async init() {
         try {
             // Load identity from wallet (admin.id)
-            const walletPath = path.resolve(__dirname, '..', '..', 'wallet', 'admin.id');
-            if (!fs.existsSync(walletPath)) {
-                console.error("Identity 'admin' not found in wallet. Run enrollAdmin.js first.");
+            if (!fs.existsSync(this.walletPath)) {
+                const msg = `Fabric identity 'admin' not found at '${this.walletPath}'. Run enrollment or mount credentials.`;
+                if (this.requireFabric) {
+                    throw new Error(`FATAL: ${msg}`);
+                }
+                console.warn(`[FABRIC GATEWAY] ${msg} Gateway operating in resilient offline outbox mode.`);
                 return;
             }
 
-            const identityData = JSON.parse(fs.readFileSync(walletPath, 'utf8'));
+            const identityData = JSON.parse(fs.readFileSync(this.walletPath, 'utf8'));
             
             const cert = identityData.credentials.certificate;
             const privateKeyPem = identityData.credentials.privateKey;
@@ -57,11 +62,13 @@ class FabricGateway {
                 token: this.contract
             };
 
-            console.log("Hyperledger Fabric v2.5 LTS Gateway SDK Initialized Successfully (single chaincode contract mapping).");
+            console.log(`Hyperledger Fabric v2.5 LTS Gateway SDK Initialized Successfully at ${this.peerEndpoint}.`);
 
         } catch (error) {
-            console.error(`Failed to connect to gateway: ${error}`);
-            // process.exit(1); // Don't exit if it fails in a server context, just log it.
+            console.error(`Failed to connect to gateway: ${error.message}`);
+            if (this.requireFabric) {
+                throw error;
+            }
         }
     }
 

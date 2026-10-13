@@ -54,9 +54,18 @@ describe('Rakt-Connect API Gateway', () => {
       expect(res.body.role).toEqual('LAB_TECH');
     });
 
-    it('POST /auth/token - should allow donor token issuance for self-service app', async () => {
+    it('POST /auth/token - should reject unauthenticated caller-selected donor token issuance', async () => {
       const res = await request(app)
         .post('/auth/token')
+        .send({ userId: 'donor-user-1', role: ROLES.DONOR });
+      expect(res.statusCode).toEqual(403);
+      expect(res.body.code).toEqual('DONOR_IDENTITY_PROOF_REQUIRED');
+    });
+
+    it('POST /auth/token - should allow donor token issuance when authenticated by administrative key', async () => {
+      const res = await request(app)
+        .post('/auth/token')
+        .set('x-admin-key', ADMIN_SERVICE_KEY)
         .send({ userId: 'donor-user-1', role: ROLES.DONOR });
       expect(res.statusCode).toEqual(200);
       expect(res.body.role).toEqual('DONOR');
@@ -432,14 +441,24 @@ describe('Rakt-Connect API Gateway', () => {
       expect(donorRes.statusCode).toEqual(403);
       expect(donorRes.body.code).toEqual('ACCESS_DENIED');
 
-      // 3. Authorized Hospital Admin
+      // 3. Authorized Hospital Admin (Rotates key in secure store without exposing private keys)
       const adminRes = await request(app)
         .post('/crypto/vault/generate-keys')
         .set('Authorization', `Bearer ${adminToken}`);
       expect(adminRes.statusCode).toEqual(200);
       expect(adminRes.body).toHaveProperty('publicKeyHex');
-      expect(adminRes.body).toHaveProperty('privateKeyHex');
+      expect(adminRes.body).toHaveProperty('keyId');
+      expect(adminRes.body).not.toHaveProperty('privateKeyHex');
       expect(adminRes.body).toHaveProperty('securityNotice');
+    });
+
+    it('POST /crypto/vault/rotation-history - should list rotation history without private keys', async () => {
+      const res = await request(app)
+        .get('/crypto/vault/rotation-history')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(res.statusCode).toEqual(200);
+      expect(Array.isArray(res.body.history)).toBe(true);
+      expect(res.body.history[0]).not.toHaveProperty('privateKeyHex');
     });
 
     it('POST /crypto/vault/encrypt & /decrypt - should encrypt with server public key and enforce clinical authorization on decrypt', async () => {
@@ -590,20 +609,35 @@ describe('Rakt-Connect API Gateway', () => {
 
   // 8. Emergency Broadcast and AI routes
   describe('Emergency Broadcast & AI Proxy', () => {
-    it('POST /broadcast/emergency - should activate EBM and return broadcast ID', async () => {
-      const res = await request(app)
+    it('POST /broadcast/emergency - should reject unauthenticated broadcast activation and require admin role', async () => {
+      // 1. Unauthenticated request must be rejected
+      const unauthRes = await request(app)
         .post('/broadcast/emergency')
         .send({ bloodGroup: 'B+', hospitalHfr: 'HFR-KA-001', radiusKm: 15, severityLevel: 'URGENT', targetAccepts: 2 });
-      expect(res.statusCode).toEqual(201);
-      expect(res.body.broadcast.id).toMatch(/^EBM-/);
+      expect(unauthRes.statusCode).toEqual(401);
+
+      // 2. Authenticated Hospital Admin succeeds
+      const authRes = await request(app)
+        .post('/broadcast/emergency')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ bloodGroup: 'B+', hospitalHfr: 'HFR-KA-001', radiusKm: 15, severityLevel: 'URGENT', targetAccepts: 2 });
+      expect(authRes.statusCode).toEqual(201);
+      expect(authRes.body.broadcast.id).toMatch(/^EBM-/);
     });
 
-    it('GET /ai/predict/:hospitalId - should return demand prediction with heuristic baseline label', async () => {
-      const res = await request(app).get('/ai/predict/HFR-KA-001?bloodGroup=O-');
-      expect(res.statusCode).toEqual(200);
-      expect(res.body.hospitalId).toBe('HFR-KA-001');
-      expect(res.body).toHaveProperty('predictedDemandUnits');
-      expect(res.body).toHaveProperty('integrationNote');
+    it('GET /ai/predict/:hospitalId - should report explicit unavailable status when microservice is offline, and allow deterministic demo baseline', async () => {
+      // 1. Standard mode without active microservice returns 503 instead of random fabricated numbers
+      const offlineRes = await request(app).get('/ai/predict/HFR-KA-001?bloodGroup=O-');
+      expect(offlineRes.statusCode).toEqual(503);
+      expect(offlineRes.body.status).toEqual('AI_SERVICE_UNAVAILABLE');
+      expect(offlineRes.body).toHaveProperty('methodologyNotice');
+
+      // 2. Explicit demo baseline mode
+      const demoRes = await request(app).get('/ai/predict/HFR-KA-001?bloodGroup=O-&allowSimulation=true');
+      expect(demoRes.statusCode).toEqual(200);
+      expect(demoRes.body.status).toEqual('DETERMINISTIC_DEMO_BASELINE');
+      expect(demoRes.body.predictedDemandUnits).toEqual(10);
+      expect(demoRes.body.isMock).toBe(true);
     });
   });
 });

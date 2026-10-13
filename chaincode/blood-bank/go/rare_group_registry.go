@@ -17,6 +17,10 @@ type RareDonor struct {
 
 // RegisterRareDonor - adds rare phenotype donor to global registry
 func (s *SmartContract) RegisterRareDonor(ctx contractapi.TransactionContextInterface, donorHash, phenotype string) error {
+	// Verify caller MSP
+	if err := verifyCallerMSP(ctx, "HospitalMSP", "HospitalOrgMSP", "BloodBankMSP", "BloodBankOrgMSP", "Org1MSP", "Org2MSP"); err != nil {
+		return err
+	}
 
 	// Verify DID exists in donor channel (NDHM Health ID check)
 	exists, _ := ctx.GetStub().GetState("DONOR_" + donorHash)

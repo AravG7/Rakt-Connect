@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/rsa"
@@ -135,3 +136,82 @@ func verifyCryptographicSignature(pubKeyOrCertPEM string, data []byte, sigHexOrB
 		return fmt.Errorf("unsupported public key algorithm; must be ECDSA or RSA")
 	}
 }
+
+// ── Canonical Payload Builders ──────────────────────────────────────────────────
+
+func buildCanonicalLabPayload(unitId, labTechId, licenseNo, hiv, hbsag, hcv, malaria, syphilis, hb, ts string) []byte {
+	return []byte(fmt.Sprintf("CANONICAL_LAB_TEST_V1|unitId=%s|techId=%s|license=%s|hiv=%s|hbsag=%s|hcv=%s|malaria=%s|syphilis=%s|hb=%s|ts=%s",
+		unitId, labTechId, licenseNo, hiv, hbsag, hcv, malaria, syphilis, hb, ts))
+}
+
+func buildCanonicalMOAuthPayload(unitId, doctorId, councilRegNo, ts string) []byte {
+	return []byte(fmt.Sprintf("CANONICAL_MO_TRANSPORT_V1|unitId=%s|doctorId=%s|councilRegNo=%s|ts=%s",
+		unitId, doctorId, councilRegNo, ts))
+}
+
+func buildCanonicalDisasterPayload(disasterId, adminId, role, radius, ts string) []byte {
+	return []byte(fmt.Sprintf("CANONICAL_DISASTER_V1|disasterId=%s|adminId=%s|role=%s|radius=%s|ts=%s",
+		disasterId, adminId, role, radius, ts))
+}
+
+func buildCanonicalReconPayload(unitId, doctorId, councilRegNo, review, ts string) []byte {
+	return []byte(fmt.Sprintf("CANONICAL_RECON_V1|unitId=%s|doctorId=%s|councilRegNo=%s|review=%s|ts=%s",
+		unitId, doctorId, councilRegNo, review, ts))
+}
+
+// verifySignerTrust establishes that the provided public key / certificate is trusted and bound to the claimed signer ID and Fabric invoker
+func verifySignerTrust(ctx contractapi.TransactionContextInterface, claimedSignerID string, pubKeyOrCertPEM string) error {
+	trimmedPEM := strings.TrimSpace(pubKeyOrCertPEM)
+	if trimmedPEM == "" {
+		return fmt.Errorf("trust verification failed: public key or certificate PEM is required")
+	}
+
+	block, _ := pem.Decode([]byte(trimmedPEM))
+	if block == nil {
+		return fmt.Errorf("trust verification failed: invalid PEM format")
+	}
+
+	ci := getClientIdentitySafe(ctx)
+	if ci == nil {
+		return fmt.Errorf("trust verification failed: invoker client identity is unavailable")
+	}
+
+	// 1. If an X.509 Certificate is provided, verify Subject CN matches or contains claimedSignerID
+	if block.Type == "CERTIFICATE" {
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return fmt.Errorf("trust verification failed: cannot parse X.509 certificate: %w", err)
+		}
+		if !strings.EqualFold(cert.Subject.CommonName, claimedSignerID) &&
+			!strings.Contains(cert.Subject.CommonName, claimedSignerID) {
+			return fmt.Errorf("trust verification failed: certificate CommonName '%s' does not match claimed signer '%s'", cert.Subject.CommonName, claimedSignerID)
+		}
+		return nil
+	}
+
+	// 2. If a Public Key is provided, verify that caller certificate matches public key or CN
+	if callerCert, err := ci.GetX509Certificate(); err == nil && callerCert != nil {
+		callerPubBytes, _ := x509.MarshalPKIXPublicKey(callerCert.PublicKey)
+		if bytes.Equal(callerPubBytes, block.Bytes) {
+			return nil // Direct match with invoker transaction certificate
+		}
+		if strings.Contains(callerCert.Subject.CommonName, claimedSignerID) {
+			return nil
+		}
+	}
+
+	// 3. Check if invoker ID from Fabric identity library matches
+	invokerID, err := ci.GetID()
+	if err == nil && strings.Contains(invokerID, claimedSignerID) {
+		return nil
+	}
+
+	// 4. Check if signer key was registered in chaincode state (PRACTITIONER_KEY_<id>)
+	registeredKey, err := ctx.GetStub().GetState("PRACTITIONER_KEY_" + claimedSignerID)
+	if err == nil && registeredKey != nil && strings.TrimSpace(string(registeredKey)) == trimmedPEM {
+		return nil
+	}
+
+	return fmt.Errorf("trust verification failed: signer '%s' is not bound to caller identity certificate and has no registered trust entry on ledger", claimedSignerID)
+}
+

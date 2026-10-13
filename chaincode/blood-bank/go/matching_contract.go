@@ -11,6 +11,11 @@ import (
 func (s *SmartContract) RequestBlood(ctx contractapi.TransactionContextInterface,
 	requestId, hospitalId, bloodGroup, componentType string, unitsNeeded int, urgencyLevel string) error {
 
+	// Verify caller MSP
+	if err := verifyCallerMSP(ctx, "HospitalMSP", "HospitalOrgMSP", "BloodBankMSP", "BloodBankOrgMSP", "Org1MSP", "Org2MSP"); err != nil {
+		return err
+	}
+
 	if unitsNeeded <= 0 {
 		return fmt.Errorf("unitsNeeded must be greater than zero")
 	}

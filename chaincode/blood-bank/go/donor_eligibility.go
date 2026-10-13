@@ -22,6 +22,11 @@ type DonorRecord struct {
 
 // RegisterDonor - creates on-chain donor record linked to ABHA with mandatory explicit DPDP consent
 func (s *SmartContract) RegisterDonor(ctx contractapi.TransactionContextInterface, donorHash, abhaId, bloodGroup, consentTimestamp string) error {
+	// Verify invoker caller MSP
+	if err := verifyCallerMSP(ctx, "HospitalMSP", "HospitalOrgMSP", "BloodBankMSP", "BloodBankOrgMSP", "Org1MSP", "Org2MSP"); err != nil {
+		return err
+	}
+
 	if strings.TrimSpace(donorHash) == "" {
 		return fmt.Errorf("donorHash cannot be empty")
 	}
@@ -103,6 +108,11 @@ func (s *SmartContract) CheckEligibility(ctx contractapi.TransactionContextInter
 func (s *SmartContract) UpdateLastDonation(ctx contractapi.TransactionContextInterface,
 	donorHash, donationDate string) error {
 
+	// Verify invoker caller MSP
+	if err := verifyCallerMSP(ctx, "HospitalMSP", "HospitalOrgMSP", "BloodBankMSP", "BloodBankOrgMSP", "Org1MSP", "Org2MSP"); err != nil {
+		return err
+	}
+
 	data, err := ctx.GetStub().GetState("DONOR_" + donorHash)
 	if err != nil {
 		return fmt.Errorf("failed to read donor from ledger: %w", err)
@@ -124,4 +134,18 @@ func (s *SmartContract) UpdateLastDonation(ctx contractapi.TransactionContextInt
 		return fmt.Errorf("failed to marshal donor: %w", err)
 	}
 	return ctx.GetStub().PutState("DONOR_"+donorHash, updated)
+}
+
+// RegisterPractitionerKey - registers an authorized medical officer or lab technician public key on ledger
+func (s *SmartContract) RegisterPractitionerKey(ctx contractapi.TransactionContextInterface, practitionerId, pubKeyPEM string) error {
+	if strings.TrimSpace(practitionerId) == "" {
+		return fmt.Errorf("practitionerId cannot be empty")
+	}
+	if strings.TrimSpace(pubKeyPEM) == "" {
+		return fmt.Errorf("pubKeyPEM cannot be empty")
+	}
+	if err := verifyCallerMSP(ctx, "HospitalMSP", "HospitalOrgMSP", "BloodBankMSP", "BloodBankOrgMSP", "Org1MSP", "Org2MSP"); err != nil {
+		return err
+	}
+	return ctx.GetStub().PutState("PRACTITIONER_KEY_"+practitionerId, []byte(strings.TrimSpace(pubKeyPEM)))
 }

@@ -38,7 +38,7 @@ var authorizedDisasterRoles = map[string]bool{
 }
 
 // parseAndValidateAdminSig validates an individual admin signature entry and verifies cryptographic signature (fail-closed)
-func parseAndValidateAdminSig(sigStr string) (*AdminSignature, error) {
+func parseAndValidateAdminSig(ctx contractapi.TransactionContextInterface, disasterId, radius, sigStr string) (*AdminSignature, error) {
 	sigStr = strings.TrimSpace(sigStr)
 	if sigStr == "" {
 		return nil, fmt.Errorf("admin signature cannot be empty")
@@ -62,13 +62,19 @@ func parseAndValidateAdminSig(sigStr string) (*AdminSignature, error) {
 		return nil, fmt.Errorf("admin signature missing required SignatureHash (fail-closed)")
 	}
 
-	sigData := []byte(fmt.Sprintf("%s:%s", sig.AdminID, sig.Role))
-	if err := verifyCryptographicSignature(sig.PublicKeyPEM, sigData, sig.SignatureHash); err != nil {
-		return nil, fmt.Errorf("cryptographic verification failed for admin %s: %w", sig.AdminID, err)
+	// 1. Establish trust binding between claimed admin ID, invoker identity, and public key
+	if err := verifySignerTrust(ctx, sig.AdminID, sig.PublicKeyPEM); err != nil {
+		return nil, fmt.Errorf("admin trust verification failed for %s: %w", sig.AdminID, err)
 	}
 
 	if sig.Timestamp == "" {
 		sig.Timestamp = time.Now().Format(time.RFC3339)
+	}
+
+	// 2. Cryptographic signature check against canonical disaster activation payload (all consequential fields)
+	sigData := buildCanonicalDisasterPayload(disasterId, sig.AdminID, sig.Role, radius, sig.Timestamp)
+	if err := verifyCryptographicSignature(sig.PublicKeyPEM, sigData, sig.SignatureHash); err != nil {
+		return nil, fmt.Errorf("cryptographic verification failed for admin %s: %w", sig.AdminID, err)
 	}
 
 	return &sig, nil
@@ -93,7 +99,7 @@ func (s *SmartContract) ActivateDisasterMode(ctx contractapi.TransactionContextI
 	var verifiedSigners []string
 
 	for i, sigStr := range adminSigs {
-		parsed, err := parseAndValidateAdminSig(sigStr)
+		parsed, err := parseAndValidateAdminSig(ctx, disasterId, affectedRadius, sigStr)
 		if err != nil {
 			return fmt.Errorf("invalid signature at index %d: %w", i, err)
 		}
@@ -134,6 +140,11 @@ func (s *SmartContract) ActivateDisasterMode(ctx contractapi.TransactionContextI
 
 // EmergencyTransfuse - bypass transfusion during disaster; strictly protects blood unit state
 func (s *SmartContract) EmergencyTransfuse(ctx contractapi.TransactionContextInterface, unitId, disasterId, patientAbhaHash string, bypassReason string) error {
+	// Verify invoker caller MSP
+	if err := verifyCallerMSP(ctx, "HospitalMSP", "HospitalOrgMSP", "BloodBankMSP", "BloodBankOrgMSP", "Org1MSP", "Org2MSP"); err != nil {
+		return err
+	}
+
 	if strings.TrimSpace(unitId) == "" {
 		return fmt.Errorf("unitId cannot be empty")
 	}
@@ -223,6 +234,11 @@ func (s *SmartContract) EmergencyTransfuse(ctx contractapi.TransactionContextInt
 
 // DeactivateDisasterMode - ends emergency; triggers PDR for all bypass events
 func (s *SmartContract) DeactivateDisasterMode(ctx contractapi.TransactionContextInterface, disasterId, deactivationTime string) error {
+	// Verify invoker caller MSP
+	if err := verifyCallerMSP(ctx, "HospitalMSP", "HospitalOrgMSP", "BloodBankMSP", "BloodBankOrgMSP", "Org1MSP", "Org2MSP"); err != nil {
+		return err
+	}
+
 	dData, err := ctx.GetStub().GetState("DISASTER_" + disasterId)
 	if err != nil {
 		return fmt.Errorf("failed to read disaster state: %w", err)

@@ -315,10 +315,20 @@ services:
       dockerfile: Dockerfile
     environment:
       - PORT=3001
-      - NODE_ENV=production
-      - FABRIC_PEER_ENDPOINT=peer0.hospital.raktconnect.com:7051
-      - FABRIC_ORDERER_ENDPOINT=orderer1.raktconnect.com:7050
+      - NODE_ENV=${NODE_ENV:-production}
+      - JWT_SECRET=${JWT_SECRET}
+      - ADMIN_SERVICE_KEY=${ADMIN_SERVICE_KEY}
+      - REQUIRE_FABRIC=${REQUIRE_FABRIC:-false}
+      - FABRIC_PEER_ENDPOINT=${FABRIC_PEER_ENDPOINT:-peer0.hospital.raktconnect.com:7051}
+      - FABRIC_PEER_HOST_ALIAS=${FABRIC_PEER_HOST_ALIAS:-peer0.hospital.raktconnect.com}
+      - FABRIC_ORDERER_ENDPOINT=${FABRIC_ORDERER_ENDPOINT:-orderer1.raktconnect.com:7050}
+      - FABRIC_TLS_CERT_PATH=${FABRIC_TLS_CERT_PATH:-/etc/rakt/crypto/peerOrganizations/hospital.raktconnect.com/tlsca/tlsca.hospital.raktconnect.com-cert.pem}
+      - FABRIC_WALLET_PATH=${FABRIC_WALLET_PATH:-/etc/rakt/wallet/admin.id}
       - AI_SERVICE_URL=http://ai-microservice:8000
+    volumes:
+      - ./crypto-config:/etc/rakt/crypto:ro
+      - ../api-gateway/wallet:/etc/rakt/wallet:ro
+      - ../api-gateway/data:/app/data
     ports:
       - "3001:3001"
     networks:

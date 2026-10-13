@@ -13,14 +13,26 @@ const {
   verifyAdminCredentials
 } = require('./src/middleware/auth');
 const PQCVault = require('./src/crypto/pqcVault');
+const { defaultKeyStore } = require('./src/crypto/keyStore');
+const { defaultOutbox } = require('./src/utils/outbox');
+const { defaultEntityStore } = require('./src/utils/entityStore');
 const H3Router = require('./src/routing/h3Router');
 const FHIRMapper = require('./src/fhir/mapper');
 const FHIRValidator = require('./src/fhir/validator');
 const fabricGateway = require('./src/fabric/gateway');
 
-// Initialize Fabric Gateway connection asynchronously
-fabricGateway.init().catch(err => {
-  logger.warn(`Fabric Gateway running in local resilient fallback mode: ${err.message}`);
+// Initialize persistent PQC key store
+defaultKeyStore.init();
+
+// Initialize Fabric Gateway connection asynchronously & start outbox periodic flusher
+fabricGateway.init().then(() => {
+  defaultOutbox.startPeriodicFlush(fabricGateway);
+}).catch(err => {
+  if (process.env.REQUIRE_FABRIC === 'true') {
+    logger.error(`FATAL: Fabric Gateway initialization failed under REQUIRE_FABRIC=true: ${err.message}`);
+    process.exit(1);
+  }
+  logger.warn(`Fabric Gateway running in local resilient outbox fallback mode: ${err.message}`);
 });
 
 const app = express();
@@ -40,18 +52,15 @@ const PORT = process.env.PORT || 3001;
 // REST API Layer connecting Web/Mobile clients to Hyperledger Fabric v2.5 LTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// ── State Stores (Synchronized with Fabric Chaincode ledger) ──────────────────
-const donors = new Map();
-const units = new Map();
-const broadcasts = new Map();
-const transfers = new Map();
-const hemoReports = new Map();
+// ── State Stores (Synchronized with Fabric Chaincode ledger & persistent storage) ─
+const donors = defaultEntityStore.loadMap('donors');
+const units = defaultEntityStore.loadMap('units');
+const broadcasts = defaultEntityStore.loadMap('broadcasts');
+const transfers = defaultEntityStore.loadMap('transfers');
+const hemoReports = defaultEntityStore.loadMap('hemoReports');
 const otpStore = new Map();
 const otpRateLimits = new Map(); // abhaId -> { count, windowStart, lastRequestTime, failedAttempts }
-const auditLog = [];
-
-// Server-managed NIST FIPS 203 ML-KEM-768 key pair for national health record sealing
-let serverVaultKeyPair = PQCVault.generateKeyPair();
+const auditLog = defaultEntityStore.loadList('auditLog');
 
 /**
  * Enforce per-ABHA rate limiting on OTP challenges:
@@ -180,6 +189,16 @@ app.post('/auth/token', (req, res) => {
     return res.status(400).json({
       error: `Invalid role '${userRole}'. Allowed roles: ${Object.keys(ROLES).join(', ')}`
     });
+  }
+
+  // Strict identity protection: Caller-selected donor identities cannot be minted over /auth/token
+  if (userRole === ROLES.DONOR) {
+    if (!verifyAdminCredentials(req)) {
+      return res.status(403).json({
+        error: 'Forbidden: Donor tokens cannot be arbitrarily minted. Donors must authenticate via verified identity proof (POST /auth/verify-otp with verified ABHA).',
+        code: 'DONOR_IDENTITY_PROOF_REQUIRED'
+      });
+    }
   }
 
   // Strict RBAC: Privileged roles require administrative credentials
@@ -432,21 +451,83 @@ app.get('/donor/:did', authenticate, requireDonorOrClinicalStaff, (req, res) => 
   res.json(donor);
 });
 
-// POST /donor/consent — Record DPDP Act 2023 digital consent update
-app.post('/donor/consent', authenticate, (req, res) => {
+// POST /donor/consent — Record DPDP Act 2023 digital consent update (Strictly restricted to owning donor or admin)
+app.post('/donor/consent', authenticate, async (req, res) => {
   const { donorDid, consentType, granted } = req.body;
+  if (!donorDid) {
+    return res.status(400).json({ error: 'donorDid is required' });
+  }
+
+  const validConsentTypes = ['DATA_PROCESSING', 'BLOOD_DONATION', 'EMERGENCY_CONTACT', 'RESEARCH'];
+  if (!consentType || !validConsentTypes.includes(consentType)) {
+    return res.status(400).json({
+      error: `Invalid consentType '${consentType}'. Supported types: ${validConsentTypes.join(', ')}`,
+      code: 'INVALID_CONSENT_TYPE'
+    });
+  }
+
+  if (typeof granted !== 'boolean') {
+    return res.status(400).json({
+      error: "Field 'granted' must be a boolean (true or false)",
+      code: 'INVALID_CONSENT_VALUE'
+    });
+  }
+
   const donor = donors.get(donorDid);
   if (!donor) return res.status(404).json({ error: 'Donor not found' });
 
-  // Only donor themselves or hospital admin can update consent
-  if (req.user.role === ROLES.DONOR && req.user.did !== donorDid) {
-    return res.status(403).json({ error: 'Forbidden: Cannot alter consent for another donor' });
+  // Strictly enforce least privilege: Only the owning donor or verified admin can modify consent
+  const isOwner = (req.user.did === donorDid || req.user.id === donorDid);
+  const isAdmin = verifyAdminCredentials(req);
+  if (!isOwner && !isAdmin) {
+    return res.status(403).json({
+      error: 'Forbidden: You do not have permission to alter consent for this donor record',
+      code: 'CONSENT_UPDATE_UNAUTHORIZED'
+    });
   }
 
   donor.consentRecorded = granted;
-  logAudit('CONSENT_UPDATED', donorDid, '', `DPDP consent update: ${consentType} = ${granted}`);
+  donor.lastConsentType = consentType;
+  donor.lastConsentUpdate = new Date().toISOString();
+  defaultEntityStore.saveMap('donors', donors);
+  logAudit('CONSENT_UPDATED', donorDid, '', `DPDP consent update: ${consentType} = ${granted} by ${req.user.id || req.user.did}`);
 
-  res.json({ message: 'Digital consent recorded on-chain', consentType, granted });
+  // Report truthful persistence status
+  let ledgerStatus = 'RECORDED_LOCAL_CONSENT_REGISTRY';
+  let fabricTxId = null;
+
+  try {
+    if (fabricGateway.contracts && fabricGateway.contracts.donorEligibility) {
+      const commitRes = await fabricGateway.submitTransaction(
+        'donorEligibility',
+        'RegisterDonor',
+        donorDid,
+        donor.abhaHash,
+        donor.bloodGroup,
+        donor.lastConsentUpdate
+      );
+      ledgerStatus = 'COMMITTED_FABRIC_LEDGER';
+      fabricTxId = commitRes && commitRes.length ? commitRes.toString() : null;
+    }
+  } catch (err) {
+    defaultOutbox.enqueue({
+      contractName: 'donorEligibility',
+      transactionName: 'UpdateConsent',
+      args: [donorDid, consentType, granted, donor.lastConsentUpdate],
+      idempotencyKey: `consent-${donorDid}-${Date.now()}`
+    });
+    ledgerStatus = 'PENDING_LEDGER_SYNC';
+  }
+
+  res.json({
+    message: ledgerStatus === 'COMMITTED_FABRIC_LEDGER'
+      ? 'Digital consent successfully committed to Fabric blockchain ledger'
+      : 'Digital consent recorded locally; queued in durable outbox for blockchain synchronization',
+    consentType,
+    granted,
+    ledgerStatus,
+    fabricTxId
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -612,8 +693,8 @@ app.post('/unit/test-result', authenticate, requireRole(ROLES.LAB_TECH, ROLES.HO
   res.json({ message: `Unit ${unit.state} by ValidationContract`, unit });
 });
 
-// GET /unit/:id/provenance — Full chain-of-custody for QR scan
-app.get('/unit/:id/provenance', (req, res) => {
+// GET /unit/:id/provenance — Full chain-of-custody for QR scan (Protected)
+app.get('/unit/:id/provenance', authenticate, (req, res) => {
   const unit = units.get(req.params.id);
   if (!unit) return res.status(404).json({ error: 'Unit not found' });
 
@@ -630,8 +711,8 @@ app.get('/unit/:id/provenance', (req, res) => {
 // INVENTORY ROUTES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// GET /inventory/:hospitalId — Real-time stock by group + component
-app.get('/inventory/:hospitalId', (req, res) => {
+// GET /inventory/:hospitalId — Real-time stock by group + component (Protected: Hospital/Clinical staff)
+app.get('/inventory/:hospitalId', authenticate, requireRole(ROLES.HOSPITAL_ADMIN, ROLES.BLOODBANK_ADMIN, ROLES.MEDICAL_OFFICER, ROLES.AUDITOR), (req, res) => {
   const hospitalUnits = Array.from(units.values()).filter(
     u =>
       u.hospitalHfr === req.params.hospitalId &&
@@ -656,8 +737,8 @@ app.get('/inventory/:hospitalId', (req, res) => {
   });
 });
 
-// GET /inventory/expiry-alerts — Units expiring within 48 hours
-app.get('/inventory/expiry-alerts', (req, res) => {
+// GET /inventory/expiry-alerts — Units expiring within 48 hours (Protected)
+app.get('/inventory/expiry-alerts', authenticate, requireRole(ROLES.HOSPITAL_ADMIN, ROLES.BLOODBANK_ADMIN, ROLES.MEDICAL_OFFICER), (req, res) => {
   const threshold = now() + 48 * 3600;
   const expiring = Array.from(units.values()).filter(
     u => u.expiryDate <= threshold && ['STORED', 'APPROVED'].includes(u.state)
@@ -670,8 +751,8 @@ app.get('/inventory/expiry-alerts', (req, res) => {
 // EMERGENCY BROADCAST MODULE (EBM)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// POST /broadcast/emergency — Launch multi-channel EBM
-app.post('/broadcast/emergency', (req, res) => {
+// POST /broadcast/emergency — Launch multi-channel EBM (Protected: Hospital/BloodBank/Disaster Admin)
+app.post('/broadcast/emergency', authenticate, requireRole(ROLES.HOSPITAL_ADMIN, ROLES.BLOODBANK_ADMIN, ROLES.DISASTER_ADMIN), (req, res) => {
   const { bloodGroup, hospitalHfr, radiusKm, severityLevel, targetAccepts } = req.body;
 
   const broadcastId = `EBM-${uuidv4().substring(0, 6).toUpperCase()}`;
@@ -708,18 +789,37 @@ app.post('/broadcast/emergency', (req, res) => {
   };
 
   broadcasts.set(broadcastId, broadcast);
-  logAudit('EBM_LAUNCHED', hospitalHfr, '', `Emergency: ${bloodGroup} needed, ${radiusKm}km, ${severityLevel}`);
+  defaultEntityStore.saveMap('broadcasts', broadcasts);
+  logAudit('EBM_LAUNCHED', hospitalHfr, '', `Emergency: ${bloodGroup} needed, ${radiusKm}km, ${severityLevel} by ${req.user.id || req.user.role}`);
 
   res.status(201).json({ message: 'Emergency Broadcast Module activated', broadcast });
 });
 
-// POST /broadcast/:id/respond — Donor responds to EBM
-app.post('/broadcast/:id/respond', (req, res) => {
+// POST /broadcast/:id/respond — Donor responds to EBM (Protected: owning Donor)
+app.post('/broadcast/:id/respond', authenticate, (req, res) => {
   const { donorDid, response, deviceId } = req.body;
+  if (!donorDid) return res.status(400).json({ error: 'donorDid is required' });
+
+  // Ownership verification: A donor cannot respond as another donor
+  if (req.user.role === ROLES.DONOR && req.user.did !== donorDid && req.user.id !== donorDid) {
+    return res.status(403).json({
+      error: 'Forbidden: Cannot submit broadcast response for another donor identity',
+      code: 'DONOR_RESPONSE_UNAUTHORIZED'
+    });
+  }
+
   const broadcast = broadcasts.get(req.params.id);
 
   if (!broadcast) return res.status(404).json({ error: 'Broadcast not found' });
   if (!broadcast.isActive) return res.status(400).json({ error: 'Broadcast stopped (stop-loss triggered)' });
+
+  // Anti-replay / idempotency: check if donor has already responded
+  if (broadcast.acceptedDonors.includes(donorDid)) {
+    return res.status(409).json({
+      error: 'Conflict: Donor has already responded to this broadcast notification',
+      code: 'DUPLICATE_BROADCAST_RESPONSE'
+    });
+  }
 
   if (response === 'ACCEPT') {
     broadcast.acceptedDonors.push(donorDid);
@@ -733,14 +833,18 @@ app.post('/broadcast/:id/respond', (req, res) => {
     if (donor) {
       donor.raktTokens += 900;
       donor.tier = calculateTier(donor.raktTokens);
+      defaultEntityStore.saveMap('donors', donors);
     }
+
+    defaultEntityStore.saveMap('broadcasts', broadcasts);
+    logAudit('EBM_ACCEPTED', donorDid, req.params.id, `Donor accepted broadcast +900 Rakt-Tokens awarded`);
   }
 
   res.json({
-    broadcast,
-    donorResponse: response,
-    timestamp: new Date().toISOString(),
-    deviceId: deviceId || 'UNKNOWN_DEVICE_ID'
+    message: `Broadcast response '${response}' recorded successfully`,
+    broadcastId: req.params.id,
+    currentAccepts: broadcast.acceptedDonors.length,
+    targetAccepts: broadcast.targetAccepts,
   });
 });
 
@@ -1079,26 +1183,40 @@ app.get('/disaster/status', (req, res) => {
 
 // GET /crypto/vault/public-key — Public endpoint to retrieve active ML-KEM-768 public key (never exposes private keys)
 app.get('/crypto/vault/public-key', (req, res) => {
+  const pubMeta = defaultKeyStore.getActivePublicMetadata();
   res.json({
-    algorithm: serverVaultKeyPair.algorithm,
-    publicKeyBytes: serverVaultKeyPair.publicKeyBytes,
-    publicKeyHex: serverVaultKeyPair.publicKey.toString('hex'),
+    algorithm: pubMeta.algorithm,
+    keyId: pubMeta.keyId,
+    publicKeyBytes: pubMeta.publicKeyBytes,
+    publicKeyHex: pubMeta.publicKeyHex,
+    createdAt: pubMeta.createdAt,
     usage: 'ML-KEM-768 post-quantum key encapsulation for DPDP/ABDM health records encryption'
   });
 });
 
-// POST /crypto/vault/generate-keys — Restricted administrative keypair provisioning (Hospital/BloodBank Admin only)
+// POST /crypto/vault/generate-keys — Restricted administrative keypair provisioning / rotation (Hospital/BloodBank Admin only)
+// NEVER exposes private keys over HTTP response; manages keys in durable keystore
 app.post('/crypto/vault/generate-keys', authenticate, requireRole(ROLES.HOSPITAL_ADMIN, ROLES.BLOODBANK_ADMIN), (req, res) => {
-  const keyPair = PQCVault.generateKeyPair();
-  if (req.query.rotateServerKey === 'true' || (req.body && req.body.rotateServerKey === true)) {
-    serverVaultKeyPair = keyPair;
-  }
+  const reason = (req.body && req.body.reason) || req.query.reason || 'ADMINISTRATIVE_KEY_ROTATION';
+  const newKeyMeta = defaultKeyStore.rotateKey(reason);
+
   res.json({
-    algorithm: keyPair.algorithm,
-    publicKeyBytes: keyPair.publicKeyBytes,
-    publicKeyHex: keyPair.publicKey.toString('hex'),
-    privateKeyHex: keyPair.privateKey.toString('hex'),
-    securityNotice: 'RESTRICTED: Generated private key must be immediately imported into a Hardware Security Module (HSM). Never expose over public unauthenticated routes.'
+    message: 'Post-quantum ML-KEM-768 key pair rotated and persisted in secure key store',
+    keyId: newKeyMeta.keyId,
+    algorithm: newKeyMeta.algorithm,
+    publicKeyBytes: newKeyMeta.publicKeyBytes,
+    publicKeyHex: newKeyMeta.publicKeyHex,
+    createdAt: newKeyMeta.createdAt,
+    status: newKeyMeta.status,
+    securityNotice: 'Private key is securely retained inside the server-managed key store and is never exported over HTTP API responses.'
+  });
+});
+
+// GET /crypto/vault/rotation-history — View key rotation history (Hospital/BloodBank Admin only)
+app.get('/crypto/vault/rotation-history', authenticate, requireRole(ROLES.HOSPITAL_ADMIN, ROLES.BLOODBANK_ADMIN), (req, res) => {
+  res.json({
+    history: defaultKeyStore.getPublicRotationHistory(),
+    activeKeyId: defaultKeyStore.activeKeyId
   });
 });
 
@@ -1108,15 +1226,19 @@ app.post('/crypto/vault/encrypt', (req, res) => {
   if (!data) return res.status(400).json({ error: 'data is required' });
 
   let pkBuffer;
+  let activeKeyId = defaultKeyStore.activeKeyId;
   if (publicKeyHex) {
     pkBuffer = Buffer.from(publicKeyHex, 'hex');
+    activeKeyId = 'custom-client-key';
   } else {
     // Encrypt against active server vault public key
-    pkBuffer = serverVaultKeyPair.publicKey;
+    const activeKey = defaultKeyStore.getActiveKey();
+    pkBuffer = activeKey.publicKey;
   }
 
   try {
     const vaultPackage = PQCVault.encryptVault(data, pkBuffer, aad || 'DPDP_SECTION_43A');
+    vaultPackage.keyId = activeKeyId;
     res.json({ vaultPackage, message: 'Health record sealed in post-quantum encrypted vault' });
   } catch (err) {
     res.status(500).json({ error: `Encryption failed: ${err.message}` });
@@ -1134,12 +1256,23 @@ app.post('/crypto/vault/decrypt', authenticate, requireRole(ROLES.HOSPITAL_ADMIN
   if (privateKeyHex) {
     skBuffer = Buffer.from(privateKeyHex, 'hex');
   } else {
-    skBuffer = serverVaultKeyPair.privateKey;
+    // Automatically match appropriate private key from managed key store
+    const matchedKey = defaultKeyStore.getKeyByIdOrPublicKey(vaultPackage.keyId);
+    if (!matchedKey) {
+      return res.status(404).json({
+        error: 'Appropriate decryption key for this vault package not found in server key store',
+        code: 'PQC_KEY_NOT_FOUND'
+      });
+    }
+    skBuffer = matchedKey.privateKey;
   }
 
   try {
-    const plaintext = PQCVault.decryptVault(vaultPackage, skBuffer);
-    res.json({ decryptedData: plaintext });
+    const decrypted = PQCVault.decryptVault(vaultPackage, skBuffer, vaultPackage.aad || 'DPDP_SECTION_43A');
+    res.json({
+      decryptedData: decrypted,
+      message: 'Health record decrypted successfully from post-quantum vault'
+    });
   } catch (err) {
     res.status(400).json({ error: `Decryption failed: ${err.message}` });
   }
@@ -1304,26 +1437,32 @@ app.post('/tax/generate-80g', authenticate, (req, res) => {
     return res.status(400).json({ error: 'donorDid and unitId are required' });
   }
 
+  // Ownership verification if donor role
+  if (req.user.role === ROLES.DONOR && req.user.did !== donorDid && req.user.id !== donorDid) {
+    return res.status(403).json({ error: 'Forbidden: Cannot request tax receipts for another donor' });
+  }
+
+  const donor = donors.get(donorDid);
+  const unit = units.get(unitId);
+
   const taxReceipt = {
-    receiptNumber: `80G-2026-${unitId.substring(0, 8)}`,
-    donorName: `Donor_${donorDid.substring(9, 15)}`,
-    panNumber: 'ENCRYPTED_PAN_HASH',
+    receiptNumber: `80G-DEMO-${unitId.substring(0, 8)}`,
+    donorDid,
+    donorStatus: donor ? 'VERIFIED_ON_RECORD' : 'UNVERIFIED',
+    unitId,
+    unitStatus: unit ? unit.state : 'UNVERIFIED',
     amountValue: '0.00',
-    exemptionType: '100% Social Contribution',
+    exemptionType: 'Social Blood Donation (Voluntary Non-Remunerated)',
     timestamp: new Date().toISOString(),
-    section65BCertificate: {
-      algorithm: 'SHA-256 + ECDSA',
-      certHash: crypto.randomBytes(32).toString('hex'),
-      legalReference: 'Section 65B Indian Evidence Act 1872'
-    },
-    status: 'GENERATED',
-    integrationNotice: 'Direct ITD e-Filing API submission marked as planned work pending registered 80G NGO onboarding'
+    status: 'DEMO_RECEIPT_PROTOTYPE',
+    certificationStatus: 'PROTOTYPE_SIMULATION_NON_OFFICIAL',
+    legalNotice: 'DEMONSTRATION ONLY: This document is an application prototype receipt for donor rewards and does NOT constitute an official tax exemption certificate under Section 80G or Section 65B of the Indian Evidence Act. Real ITD e-filing submission is subject to registered 80G NGO onboarding.'
   };
 
-  logAudit('TAX_80G_GENERATED', donorDid, unitId, 'Generated 80G Tax receipt with Section 65B Certificate');
+  logAudit('TAX_80G_DEMO_GENERATED', donorDid, unitId, 'Generated 80G demonstration receipt');
 
   res.status(201).json({
-    message: '80G Tax receipt generated successfully (Section 65B Certified)',
+    message: '80G Tax receipt prototype generated (Demonstration)',
     receipt: taxReceipt
   });
 });
@@ -1334,24 +1473,27 @@ app.post('/tax/generate-80g', authenticate, (req, res) => {
 
 const insuranceClaims = new Map();
 
-// POST /insurance/claim — NHCX Auto-Adjudication Simulator
-app.post('/insurance/claim', (req, res) => {
+// POST /insurance/claim — NHCX Auto-Adjudication Simulator (Protected: Clinical/Hospital Staff)
+app.post('/insurance/claim', authenticate, requireRole(ROLES.HOSPITAL_ADMIN, ROLES.BLOODBANK_ADMIN, ROLES.MEDICAL_OFFICER), (req, res) => {
   const { unitId, patientAbha, insurerCode, policyNumber } = req.body;
+  if (!unitId || !patientAbha) {
+    return res.status(400).json({ error: 'unitId and patientAbha are required' });
+  }
 
+  const claimId = `CLM-SIM-${uuidv4().substring(0, 6).toUpperCase()}`;
   res.json({
-    message: 'Insurance claim processed via NHCX Simulator',
-    claimId: `CLM-${uuidv4().substring(0, 6).toUpperCase()}`,
+    message: 'Insurance claim submitted to NHCX protocol demonstration router',
+    claimId,
     nhcxMode: 'SANDBOX_SIMULATOR',
-    integrationNote: 'Live NHCX clearinghouse integration planned pending IRDAI/NHCX sandbox onboarding',
-    status: 'AUTO_APPROVED',
-    processingTime: '< 3 minutes',
+    status: 'SIMULATED_DEMO_SUBMISSION',
+    adjudicationNotice: 'DEMONSTRATION PROTOTYPE: Auto-approval is a simulated protocol workflow. No actual insurance policy adjudication or financial settlement was executed with IRDAI or PM-JAY.',
     details: {
       unitId,
       patientAbha,
       insurerCode: insurerCode || 'PM_JAY',
-      policyNumber: policyNumber || 'POL-2026-9912',
-      medicalNecessity: 'Verified via Medical Officer digital signature + ABHA ID',
-      blockchainProof: 'Chain of custody verified on Hyperledger Fabric v2.5 LTS'
+      policyNumber: policyNumber || 'POL-SIM-2026',
+      medicalNecessityCheck: 'Structural validation passed',
+      submittedBy: req.user.id || req.user.name
     }
   });
 });
@@ -1364,7 +1506,7 @@ const fetch = require('node-fetch');
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
 app.get('/ai/predict/:hospitalId', async (req, res) => {
-  const { bloodGroup } = req.query;
+  const { bloodGroup, allowSimulation } = req.query;
   const hospitalId = req.params.hospitalId;
 
   try {
@@ -1391,22 +1533,33 @@ app.get('/ai/predict/:hospitalId', async (req, res) => {
       });
     }
   } catch (error) {
-    // Microservice offline, fall back to heuristic baseline
+    // Microservice offline
   }
 
-  res.json({
+  // Honest status when AI microservice is offline: Never return fabricated random numbers
+  if (allowSimulation === 'true') {
+    return res.json({
+      hospitalId,
+      bloodGroup: bloodGroup || 'O-',
+      forecastHours: 48,
+      status: 'DETERMINISTIC_DEMO_BASELINE',
+      predictedDemandUnits: 10,
+      surgeProb: 0.50,
+      warningLevel: 'MODERATE',
+      model: 'Deterministic Demo Baseline (PyTorch TFT microservice offline)',
+      methodologyNotice: 'DEMONSTRATION ONLY: Synthetic heuristic baseline. Trained PyTorch TFT model is required for clinical decision support.',
+      timestamp: new Date().toISOString(),
+      isMock: true
+    });
+  }
+
+  return res.status(503).json({
+    status: 'AI_SERVICE_UNAVAILABLE',
+    error: 'AI Demand Forecasting microservice is currently unreachable at configured AI_SERVICE_URL.',
     hospitalId,
     bloodGroup: bloodGroup || 'O-',
-    forecastHours: 48,
-    predictedDemandUnits: Math.floor(Math.random() * 20) + 5,
-    surgeProb: +(Math.random() * 0.5 + 0.3).toFixed(2),
-    warningLevel: 'MODERATE',
-    model: 'Temporal Fusion Transformer (TFT) Baseline Heuristics',
-    integrationNote: 'Trained PyTorch TFT weights GPU deployment planned; currently serving calibrated clinical heuristics',
-    confidence: +(Math.random() * 0.15 + 0.82).toFixed(2),
-    triggerBroadcast: false,
-    timestamp: new Date().toISOString(),
-    isMock: true
+    isAvailable: false,
+    methodologyNotice: 'To protect clinical reliability, random synthetic numbers are not returned. Pass ?allowSimulation=true for static demo mode.'
   });
 });
 

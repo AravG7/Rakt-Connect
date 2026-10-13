@@ -51,7 +51,13 @@ func (s *SmartContract) ReconcileUnit(ctx contractapi.TransactionContextInterfac
 		return fmt.Errorf("unverified reconciliation authorization: DigitalSignature required (fail-closed)")
 	}
 
-	reconData := []byte(fmt.Sprintf("%s:%s", reconAuth.DoctorID, unitId))
+	// 1. Establish trust binding between claimed Medical Officer ID, invoker identity, and public key
+	if err := verifySignerTrust(ctx, reconAuth.DoctorID, reconAuth.PublicKeyPEM); err != nil {
+		return fmt.Errorf("reconciliation trust verification failed: %w", err)
+	}
+
+	// 2. Cryptographic signature check against canonical reconciliation payload (all consequential fields)
+	reconData := buildCanonicalReconPayload(unitId, reconAuth.DoctorID, reconAuth.CouncilRegNo, reconAuth.ClinicalReview, reconAuth.Timestamp)
 	if err := verifyCryptographicSignature(reconAuth.PublicKeyPEM, reconData, reconAuth.DigitalSignature); err != nil {
 		return fmt.Errorf("cryptographic verification failed for reconciliation: %w", err)
 	}
@@ -111,6 +117,11 @@ func (s *SmartContract) ReconcileDisasterLogs(ctx contractapi.TransactionContext
 		return "", fmt.Errorf("disasterId cannot be empty")
 	}
 
+	// 1. Verify invoker caller MSP
+	if err := verifyCallerMSP(ctx, "HospitalMSP", "HospitalOrgMSP", "BloodBankMSP", "BloodBankOrgMSP", "Org1MSP", "Org2MSP"); err != nil {
+		return "", err
+	}
+
 	// CouchDB query: all PENDING units linked to this disaster
 	query := fmt.Sprintf(`{"selector":{"disasterId":"%s","reconciliationStatus":"PENDING"}}`, disasterId)
 
@@ -131,16 +142,44 @@ func (s *SmartContract) ReconcileDisasterLogs(ctx contractapi.TransactionContext
 
 		var unit BloodUnit
 		if err := json.Unmarshal(qr.Value, &unit); err != nil {
-			continue // skip malformed records
+			return "", fmt.Errorf("corrupt blood unit record in ledger: %w", err)
 		}
 
-		// Retroactive verification: ABHA hash + MO eSign must be present and verified
-		if unit.PatientABHAHash != "" && unit.MOeSignature != "" && len(unit.MOeSignature) >= 16 {
+		// Cryptographic verification: ABHA hash + verified MO eSign must be present and valid
+		verified := false
+		if unit.PatientABHAHash != "" && strings.TrimSpace(unit.MOeSignature) != "" {
+			var reconAuth ReconciliationAuth
+			if err := json.Unmarshal([]byte(unit.MOeSignature), &reconAuth); err == nil &&
+				reconAuth.DoctorID != "" && reconAuth.DigitalSignature != "" && reconAuth.PublicKeyPEM != "" {
+				reconData := buildCanonicalReconPayload(unit.UnitID, reconAuth.DoctorID, reconAuth.CouncilRegNo, reconAuth.ClinicalReview, reconAuth.Timestamp)
+				if err := verifyCryptographicSignature(reconAuth.PublicKeyPEM, reconData, reconAuth.DigitalSignature); err == nil {
+					if err := verifySignerTrust(ctx, reconAuth.DoctorID, reconAuth.PublicKeyPEM); err == nil {
+						verified = true
+					}
+				}
+			} else {
+				var moAuth MOAuthorization
+				if err := json.Unmarshal([]byte(unit.MOeSignature), &moAuth); err == nil &&
+					moAuth.DoctorID != "" && moAuth.DigitalSignature != "" && moAuth.PublicKeyPEM != "" {
+					moData := buildCanonicalMOAuthPayload(unit.UnitID, moAuth.DoctorID, moAuth.CouncilRegNo, moAuth.Timestamp)
+					if err := verifyCryptographicSignature(moAuth.PublicKeyPEM, moData, moAuth.DigitalSignature); err == nil {
+						if err := verifySignerTrust(ctx, moAuth.DoctorID, moAuth.PublicKeyPEM); err == nil {
+							verified = true
+						}
+					}
+				}
+			}
+		}
+
+		if verified {
 			unit.ReconciliationStatus = "COMPLETED"
 			reconciled++
 			updated, err := json.Marshal(unit)
-			if err == nil {
-				_ = ctx.GetStub().PutState("UNIT_"+unit.UnitID, updated)
+			if err != nil {
+				return "", fmt.Errorf("failed to marshal reconciled unit %s: %w", unit.UnitID, err)
+			}
+			if err := ctx.GetStub().PutState("UNIT_"+unit.UnitID, updated); err != nil {
+				return "", fmt.Errorf("failed to persist reconciled unit %s to ledger: %w", unit.UnitID, err)
 			}
 		} else {
 			unit.ReconciliationStatus = "PENDING"

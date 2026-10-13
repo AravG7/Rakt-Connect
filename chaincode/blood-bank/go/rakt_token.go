@@ -13,6 +13,10 @@ type SmartContract struct {
 
 // MintRaktToken - called on transfusion confirm event; non-monetary utility points
 func (s *SmartContract) MintRaktToken(ctx contractapi.TransactionContextInterface, donorHash string, amount int, reason string) error {
+	// Verify caller MSP
+	if err := verifyCallerMSP(ctx, "HospitalMSP", "HospitalOrgMSP", "BloodBankMSP", "BloodBankOrgMSP", "Org1MSP", "Org2MSP"); err != nil {
+		return err
+	}
 
 	data, _ := ctx.GetStub().GetState("DONOR_" + donorHash)
 
@@ -42,6 +46,10 @@ func (s *SmartContract) MintRaktToken(ctx contractapi.TransactionContextInterfac
 
 // RedeemRaktToken - used for OPD priority, insurance, tax receipt triggers
 func (s *SmartContract) RedeemRaktToken(ctx contractapi.TransactionContextInterface, donorHash string, amount int, rewardType string) error {
+	// Verify caller MSP
+	if err := verifyCallerMSP(ctx, "HospitalMSP", "HospitalOrgMSP", "BloodBankMSP", "BloodBankOrgMSP", "Org1MSP", "Org2MSP"); err != nil {
+		return err
+	}
 
 	data, _ := ctx.GetStub().GetState("DONOR_" + donorHash)
 

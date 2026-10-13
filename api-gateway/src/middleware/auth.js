@@ -194,7 +194,7 @@ const requireRole = (...allowedRoles) => {
       return res.status(401).json({ error: 'Unauthorized: User not authenticated' });
     }
 
-    if (!allowedRoles.includes(req.user.role) && req.user.role !== ROLES.HOSPITAL_ADMIN) {
+    if (!allowedRoles.includes(req.user.role)) {
       return res.status(403).json({
         error: `Forbidden: User role '${req.user.role}' lacks permission for this endpoint`,
         code: 'ACCESS_DENIED',

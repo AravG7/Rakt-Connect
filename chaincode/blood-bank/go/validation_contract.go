@@ -80,13 +80,41 @@ func (s *SmartContract) SubmitTestResult(ctx contractapi.TransactionContextInter
 		return fmt.Errorf("unverified lab submission: DigitalSignature required (fail-closed)")
 	}
 
-	// Cryptographic signature check against signed test results data
-	testData := []byte(fmt.Sprintf("%s:%s:%s", labSubmission.LabTechID, unitId, labSubmission.TestResults.HIV))
-	if err := verifyCryptographicSignature(labSubmission.PublicKeyPEM, testData, labSubmission.DigitalSignature); err != nil {
-		return fmt.Errorf("cryptographic signature verification failed: %w", err)
+	// 1. Establish trust binding between claimed lab technician ID, invoker identity, and public key
+	if err := verifySignerTrust(ctx, labSubmission.LabTechID, labSubmission.PublicKeyPEM); err != nil {
+		return fmt.Errorf("lab technician trust verification failed: %w", err)
 	}
 
 	results := labSubmission.TestResults
+
+	// 2. Validate mandatory Hemoglobin (Hb) presence, numeric format, and plausible clinical range (fail-closed)
+	if strings.TrimSpace(results.Hb) == "" {
+		return fmt.Errorf("blood safety validation failed: hemoglobin (Hb) test result is mandatory and cannot be empty (fail-closed)")
+	}
+	hbVal, err := strconv.ParseFloat(strings.TrimSpace(results.Hb), 64)
+	if err != nil {
+		return fmt.Errorf("blood safety validation failed: malformed hemoglobin (Hb) value '%s': %w", results.Hb, err)
+	}
+	if hbVal < 5.0 || hbVal > 25.0 {
+		return fmt.Errorf("blood safety validation failed: hemoglobin value %.2f g/dL outside plausible clinical range [5.0, 25.0]", hbVal)
+	}
+
+	// 3. Cryptographic signature check against canonical lab test results data (all consequential fields)
+	canonicalPayload := buildCanonicalLabPayload(
+		unitId,
+		labSubmission.LabTechID,
+		labSubmission.LabLicenseNo,
+		results.HIV,
+		results.HBsAg,
+		results.HCV,
+		results.Malaria,
+		results.Syphilis,
+		results.Hb,
+		labSubmission.TestTimestamp,
+	)
+	if err := verifyCryptographicSignature(labSubmission.PublicKeyPEM, canonicalPayload, labSubmission.DigitalSignature); err != nil {
+		return fmt.Errorf("cryptographic signature verification failed: %w", err)
+	}
 
 	// Validate all mandatory infectious disease screening markers (WHO & NBTC mandate)
 	results.HIV = strings.ToUpper(strings.TrimSpace(results.HIV))
@@ -106,15 +134,12 @@ func (s *SmartContract) SubmitTestResult(ctx contractapi.TransactionContextInter
 	}
 
 	// Check Hemoglobin threshold (minimum 12.5 g/dL per NBTC guidelines)
-	if strings.TrimSpace(results.Hb) != "" {
-		hbVal, err := strconv.ParseFloat(strings.TrimSpace(results.Hb), 64)
-		if err == nil && hbVal < 12.5 {
-			unit.State = "PermanentlyRejected"
-			unit.TestResults = resultsJSON
-			ctx.GetStub().SetEvent("UNIT_REJECTED", []byte(fmt.Sprintf(`{"unitId":"%s","reason":"Low Hemoglobin: %.1f g/dL"}`, unitId, hbVal)))
-			updated, _ := json.Marshal(unit)
-			return ctx.GetStub().PutState("UNIT_"+unitId, updated)
-		}
+	if hbVal < 12.5 {
+		unit.State = "PermanentlyRejected"
+		unit.TestResults = resultsJSON
+		ctx.GetStub().SetEvent("UNIT_REJECTED", []byte(fmt.Sprintf(`{"unitId":"%s","reason":"Low Hemoglobin: %.1f g/dL (minimum 12.5 g/dL required)"}`, unitId, hbVal)))
+		updated, _ := json.Marshal(unit)
+		return ctx.GetStub().PutState("UNIT_"+unitId, updated)
 	}
 
 	unit.TestResults = resultsJSON

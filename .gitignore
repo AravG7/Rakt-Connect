@@ -45,9 +45,10 @@ Flutter/Generated.xcconfig
 .DS_Store
 Thumbs.db
 
-# API Gateway Wallets & Logs
+# API Gateway Wallets, Logs & Runtime Data
 api-gateway/wallet/
 api-gateway/logs/
+api-gateway/data/
 *.log
 
 # Temporary Test Payloads

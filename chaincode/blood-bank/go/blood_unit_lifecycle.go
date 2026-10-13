@@ -103,7 +103,12 @@ func (s *SmartContract) CollectUnit(ctx contractapi.TransactionContextInterface,
 	unitId, donorHash, bloodGroup, componentType string, volumeMl int,
 	collectionTime, batchId string) error {
 
-	// 1. Validate inputs
+	// 1. Verify caller MSP
+	if err := verifyCallerMSP(ctx, "HospitalMSP", "HospitalOrgMSP", "BloodBankMSP", "BloodBankOrgMSP", "Org1MSP", "Org2MSP"); err != nil {
+		return err
+	}
+
+	// 2. Validate inputs
 	if strings.TrimSpace(unitId) == "" {
 		return fmt.Errorf("unitId cannot be empty")
 	}
@@ -171,6 +176,11 @@ func (s *SmartContract) CollectUnit(ctx contractapi.TransactionContextInterface,
 
 // LogTemperature - IoT cold chain heartbeat with component-specific safe range checks
 func (s *SmartContract) LogTemperature(ctx contractapi.TransactionContextInterface, unitId string, tempCelsius float64) error {
+	// Verify caller MSP
+	if err := verifyCallerMSP(ctx, "HospitalMSP", "HospitalOrgMSP", "BloodBankMSP", "BloodBankOrgMSP", "Org1MSP", "Org2MSP"); err != nil {
+		return err
+	}
+
 	data, err := ctx.GetStub().GetState("UNIT_" + unitId)
 	if err != nil {
 		return fmt.Errorf("failed to read unit from ledger: %w", err)
@@ -252,8 +262,14 @@ func (s *SmartContract) AuthorizeTransport(ctx contractapi.TransactionContextInt
 		return fmt.Errorf("invalid Medical Officer credentials: DigitalSignature required (fail-closed)")
 	}
 
-	moData := []byte(fmt.Sprintf("%s:%s", moAuth.DoctorID, unitId))
-	if err := verifyCryptographicSignature(moAuth.PublicKeyPEM, moData, moAuth.DigitalSignature); err != nil {
+	// Establish trust for Medical Officer identity and key
+	if err := verifySignerTrust(ctx, moAuth.DoctorID, moAuth.PublicKeyPEM); err != nil {
+		return fmt.Errorf("Medical Officer trust verification failed: %w", err)
+	}
+
+	// Canonical payload covering all consequential fields
+	canonicalPayload := buildCanonicalMOAuthPayload(unitId, moAuth.DoctorID, moAuth.CouncilRegNo, moAuth.Timestamp)
+	if err := verifyCryptographicSignature(moAuth.PublicKeyPEM, canonicalPayload, moAuth.DigitalSignature); err != nil {
 		return fmt.Errorf("cryptographic verification failed for Medical Officer authorization: %w", err)
 	}
 
@@ -286,6 +302,11 @@ func (s *SmartContract) AuthorizeTransport(ctx contractapi.TransactionContextInt
 
 // ConfirmTransfusion - verifies unit state, expiry, and patient linkage before marking Transfused
 func (s *SmartContract) ConfirmTransfusion(ctx contractapi.TransactionContextInterface, unitId, patientAbhaHash string) error {
+	// 1. Verify caller MSP
+	if err := verifyCallerMSP(ctx, "HospitalMSP", "HospitalOrgMSP", "BloodBankMSP", "BloodBankOrgMSP", "Org1MSP", "Org2MSP"); err != nil {
+		return err
+	}
+
 	if strings.TrimSpace(patientAbhaHash) == "" {
 		return fmt.Errorf("patientABHAHash cannot be empty")
 	}

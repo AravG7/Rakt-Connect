@@ -140,6 +140,15 @@ jobs:
       - uses: actions/checkout@v4
       - run: |
           cd network
+          # Provision ephemeral deployment secrets for integration testing (avoids hardcoded secrets)
+          export CI_JWT_SECRET=$(openssl rand -hex 32)
+          export CI_ADMIN_KEY=$(openssl rand -hex 32)
+          cat <<EOF > .env
+JWT_SECRET=${CI_JWT_SECRET}
+ADMIN_SERVICE_KEY=${CI_ADMIN_KEY}
+NODE_ENV=production
+REQUIRE_FABRIC=false
+EOF
           docker compose -f docker-compose.yaml up -d couchdb0 couchdb1 couchdb2 api-gateway ai-microservice
           
           # Wait for services with improved health checks (STQC Compliance requires x-forwarded-proto header)
