@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
@@ -14,16 +15,32 @@ type DonorRecord struct {
 	BloodGroup       string `json:"bloodGroup"`
 	LastDonationDate string `json:"lastDonationDate"` // ISO 8601
 	Status           string `json:"status"`           // active | blacklisted
-	ConsentTimestamp string `json:"consentTimestamp"`
+	ConsentTimestamp string `json:"consentTimestamp"` // DPDP Act 2023 digital consent timestamp
 	DonorTier        string `json:"donorTier"`        // standard | golden | diamond
 	RaktTokenBalance int    `json:"raktTokenBalance"`
 }
 
-// RegisterDonor - creates on-chain donor record linked to ABHA (NDHM Building Block)
+// RegisterDonor - creates on-chain donor record linked to ABHA with mandatory explicit DPDP consent
 func (s *SmartContract) RegisterDonor(ctx contractapi.TransactionContextInterface, donorHash, abhaId, bloodGroup, consentTimestamp string) error {
-	exists, _ := ctx.GetStub().GetState("DONOR_" + donorHash)
+	if strings.TrimSpace(donorHash) == "" {
+		return fmt.Errorf("donorHash cannot be empty")
+	}
+	if strings.TrimSpace(abhaId) == "" {
+		return fmt.Errorf("abhaId cannot be empty")
+	}
+	if strings.TrimSpace(bloodGroup) == "" || !validBloodGroups[bloodGroup] {
+		return fmt.Errorf("invalid blood group '%s'; must be valid ABO/Rh or known rare group", bloodGroup)
+	}
+	if strings.TrimSpace(consentTimestamp) == "" {
+		return fmt.Errorf("consent violation: DPDP Act 2023 requires explicit consent with valid consentTimestamp")
+	}
+
+	exists, err := ctx.GetStub().GetState("DONOR_" + donorHash)
+	if err != nil {
+		return fmt.Errorf("failed to query donor state: %w", err)
+	}
 	if exists != nil {
-		return fmt.Errorf("donor %s already registered - DID collision detected", donorHash)
+		return fmt.Errorf("donor %s already registered - duplicate registration blocked", donorHash)
 	}
 
 	donor := DonorRecord{
@@ -37,27 +54,44 @@ func (s *SmartContract) RegisterDonor(ctx contractapi.TransactionContextInterfac
 		RaktTokenBalance: 0,
 	}
 
-	data, _ := json.Marshal(donor)
+	data, err := json.Marshal(donor)
+	if err != nil {
+		return fmt.Errorf("failed to marshal donor record: %w", err)
+	}
+
+	ctx.GetStub().SetEvent("DONOR_REGISTERED", []byte(fmt.Sprintf(`{"donorHash":"%s","bloodGroup":"%s"}`, donorHash, bloodGroup)))
 	return ctx.GetStub().PutState("DONOR_"+donorHash, data)
 }
 
-// CheckEligibility - enforces NBTC 90-day mandatory gap
+// CheckEligibility - enforces NBTC 90-day mandatory gap and exclusion flags
 func (s *SmartContract) CheckEligibility(ctx contractapi.TransactionContextInterface, donorHash string) (bool, error) {
+	if strings.TrimSpace(donorHash) == "" {
+		return false, fmt.Errorf("donorHash cannot be empty")
+	}
+
 	data, err := ctx.GetStub().GetState("DONOR_" + donorHash)
-	if err != nil || data == nil {
+	if err != nil {
+		return false, fmt.Errorf("failed to query donor: %w", err)
+	}
+	if data == nil {
 		return false, fmt.Errorf("donor %s not found", donorHash)
 	}
 
 	var donor DonorRecord
-	json.Unmarshal(data, &donor)
-
-	if donor.Status == "blacklisted" {
-		return false, fmt.Errorf("donor ineligible - excluded flag set (HIV/Hep history)")
+	if err := json.Unmarshal(data, &donor); err != nil {
+		return false, fmt.Errorf("failed to parse donor record: %w", err)
 	}
 
-	last, _ := time.Parse("2006-01-02", donor.LastDonationDate)
-	daysSince := int(time.Since(last).Hours() / 24)
+	if donor.Status == "blacklisted" {
+		return false, fmt.Errorf("donor ineligible - excluded flag set (HIV/Hep history or medical deferral)")
+	}
 
+	last, err := time.Parse("2006-01-02", donor.LastDonationDate)
+	if err != nil {
+		last = time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
+	}
+
+	daysSince := int(time.Since(last).Hours() / 24)
 	if daysSince < 90 {
 		return false, fmt.Errorf("90-day donation gap not satisfied: only %d days since last donation", daysSince)
 	}
@@ -69,14 +103,25 @@ func (s *SmartContract) CheckEligibility(ctx contractapi.TransactionContextInter
 func (s *SmartContract) UpdateLastDonation(ctx contractapi.TransactionContextInterface,
 	donorHash, donationDate string) error {
 
-	data, _ := ctx.GetStub().GetState("DONOR_" + donorHash)
+	data, err := ctx.GetStub().GetState("DONOR_" + donorHash)
+	if err != nil {
+		return fmt.Errorf("failed to read donor from ledger: %w", err)
+	}
+	if data == nil {
+		return fmt.Errorf("donor %s not found", donorHash)
+	}
 
 	var donor DonorRecord
-	json.Unmarshal(data, &donor)
+	if err := json.Unmarshal(data, &donor); err != nil {
+		return fmt.Errorf("failed to parse donor data: %w", err)
+	}
 
 	donor.LastDonationDate = donationDate
 	donor.RaktTokenBalance += 100 // base Rakt-Token award
 
-	updated, _ := json.Marshal(donor)
+	updated, err := json.Marshal(donor)
+	if err != nil {
+		return fmt.Errorf("failed to marshal donor: %w", err)
+	}
 	return ctx.GetStub().PutState("DONOR_"+donorHash, updated)
 }

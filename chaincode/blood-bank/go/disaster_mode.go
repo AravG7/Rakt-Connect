@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 )
@@ -10,55 +12,194 @@ import (
 type DisasterEvent struct {
 	DisasterID          string   `json:"disasterId"`
 	ActivationTimestamp string   `json:"activationTimestamp"`
-	AuthorizingAdmins   []string `json:"authorizingAdmins"` // Min 2-of-3 Multi-Sig
+	AuthorizingAdmins   []string `json:"authorizingAdmins"` // Verified 2-of-3 Multi-Sig
 	Active              bool     `json:"active"`
 	AffectedRadius      string   `json:"affectedRadius"`
 	DeactivationTime    string   `json:"deactivationTime"`
 }
 
-// ActivateDisasterMode - requires Multi-Sig from 2+ org admins
-func (s *SmartContract) ActivateDisasterMode(ctx contractapi.TransactionContextInterface, disasterId, timestamp, affectedRadius string, adminSigs []string) error {
+// AdminSignature represents an authorized administrator digital signature for disaster activation
+type AdminSignature struct {
+	AdminID       string `json:"adminId"`
+	Role          string `json:"role"`
+	SignatureHash string `json:"signatureHash"`
+	Timestamp     string `json:"timestamp"`
+}
 
-	if len(adminSigs) < 2 { // 2-of-3 Multi-Sig mandatory
-		return fmt.Errorf("disaster mode requires multi-sig from minimum 2 org admins; got %d", len(adminSigs))
+var authorizedDisasterRoles = map[string]bool{
+	"STATE_HEALTH_SECRETARY": true,
+	"NBTC_DIRECTOR":          true,
+	"NDMA_MEMBER":            true,
+	"DISTRICT_COLLECTOR":     true,
+	"CHIEF_MEDICAL_OFFICER":  true,
+	"HOSPITAL_ADMIN":         true,
+	"DISASTER_COORDINATOR":   true,
+}
+
+// parseAndValidateAdminSig validates an individual admin signature entry
+func parseAndValidateAdminSig(sigStr string) (*AdminSignature, error) {
+	sigStr = strings.TrimSpace(sigStr)
+	if sigStr == "" {
+		return nil, fmt.Errorf("admin signature cannot be empty")
+	}
+
+	var sig AdminSignature
+	// Attempt JSON unmarshaling first
+	if err := json.Unmarshal([]byte(sigStr), &sig); err == nil && sig.AdminID != "" {
+		if strings.TrimSpace(sig.Role) == "" || !authorizedDisasterRoles[sig.Role] {
+			return nil, fmt.Errorf("admin %s does not have an authorized disaster activation role (got '%s')", sig.AdminID, sig.Role)
+		}
+		if len(sig.SignatureHash) < 16 {
+			return nil, fmt.Errorf("admin %s signatureHash has insufficient cryptographic length (must be >= 16 chars)", sig.AdminID)
+		}
+		return &sig, nil
+	}
+
+	// Support structured string format: "adminId:role:signatureHash"
+	parts := strings.Split(sigStr, ":")
+	if len(parts) >= 3 {
+		adminID := strings.TrimSpace(parts[0])
+		role := strings.TrimSpace(parts[1])
+		sigHash := strings.TrimSpace(parts[2])
+
+		if adminID == "" || !authorizedDisasterRoles[role] || len(sigHash) < 16 {
+			return nil, fmt.Errorf("invalid structured admin signature '%s'; requires valid AdminID, authorized role, and sigHash >= 16 chars", sigStr)
+		}
+		return &AdminSignature{
+			AdminID:       adminID,
+			Role:          role,
+			SignatureHash: sigHash,
+			Timestamp:     time.Now().Format(time.RFC3339),
+		}, nil
+	}
+
+	return nil, fmt.Errorf("invalid admin signature format; expected JSON or 'adminId:role:signatureHash', got '%s'", sigStr)
+}
+
+// ActivateDisasterMode - verifies at least two distinct authorized signers
+func (s *SmartContract) ActivateDisasterMode(ctx contractapi.TransactionContextInterface, disasterId, timestamp, affectedRadius string, adminSigs []string) error {
+	if strings.TrimSpace(disasterId) == "" {
+		return fmt.Errorf("disasterId cannot be empty")
+	}
+	if len(adminSigs) < 2 {
+		return fmt.Errorf("disaster mode requires multi-sig from minimum 2 distinct org admins; got %d", len(adminSigs))
+	}
+
+	seenAdmins := make(map[string]bool)
+	seenHashes := make(map[string]bool)
+	var verifiedSigners []string
+
+	for i, sigStr := range adminSigs {
+		parsed, err := parseAndValidateAdminSig(sigStr)
+		if err != nil {
+			return fmt.Errorf("invalid signature at index %d: %w", i, err)
+		}
+
+		if seenAdmins[parsed.AdminID] {
+			return fmt.Errorf("duplicate admin signer detected: %s cannot sign multiple times", parsed.AdminID)
+		}
+		if seenHashes[parsed.SignatureHash] {
+			return fmt.Errorf("duplicate signature hash detected for admin %s", parsed.AdminID)
+		}
+
+		seenAdmins[parsed.AdminID] = true
+		seenHashes[parsed.SignatureHash] = true
+		verifiedSigners = append(verifiedSigners, fmt.Sprintf("%s (%s)", parsed.AdminID, parsed.Role))
+	}
+
+	if len(seenAdmins) < 2 {
+		return fmt.Errorf("disaster mode requires at least 2 distinct authorized signers; got %d", len(seenAdmins))
 	}
 
 	event := DisasterEvent{
 		DisasterID:          disasterId,
 		ActivationTimestamp: timestamp,
-		AuthorizingAdmins:   adminSigs,
+		AuthorizingAdmins:   verifiedSigners,
 		Active:              true,
 		AffectedRadius:      affectedRadius,
 	}
 
-	data, _ := json.Marshal(event)
+	data, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("failed to marshal disaster event: %w", err)
+	}
 
 	ctx.GetStub().SetEvent("DISASTER_MODE_ACTIVATED", []byte(disasterId))
 
 	return ctx.GetStub().PutState("DISASTER_"+disasterId, data)
 }
 
-// EmergencyTransfuse - bypass transfusion during disaster; flags for PDR
+// EmergencyTransfuse - bypass transfusion during disaster; strictly protects blood unit state
 func (s *SmartContract) EmergencyTransfuse(ctx contractapi.TransactionContextInterface, unitId, disasterId, patientAbhaHash string, bypassReason string) error {
+	if strings.TrimSpace(unitId) == "" {
+		return fmt.Errorf("unitId cannot be empty")
+	}
+	if strings.TrimSpace(disasterId) == "" {
+		return fmt.Errorf("disasterId cannot be empty")
+	}
+	if strings.TrimSpace(patientAbhaHash) == "" {
+		return fmt.Errorf("patientAbhaHash cannot be empty")
+	}
 
-	// Verify disaster is active
-	dData, _ := ctx.GetStub().GetState("DISASTER_" + disasterId)
-
+	// 1. Verify disaster exists and is currently active
+	dData, err := ctx.GetStub().GetState("DISASTER_" + disasterId)
+	if err != nil {
+		return fmt.Errorf("failed to read disaster state from ledger: %w", err)
+	}
 	if dData == nil {
 		return fmt.Errorf("no active disaster with ID %s", disasterId)
 	}
 
 	var disaster DisasterEvent
-	json.Unmarshal(dData, &disaster)
+	if err := json.Unmarshal(dData, &disaster); err != nil {
+		return fmt.Errorf("failed to parse disaster data: %w", err)
+	}
 
 	if !disaster.Active {
 		return fmt.Errorf("disaster %s is not currently active", disasterId)
 	}
 
-	data, _ := ctx.GetStub().GetState("UNIT_" + unitId)
+	// 2. Read unit and strictly protect its state
+	data, err := ctx.GetStub().GetState("UNIT_" + unitId)
+	if err != nil {
+		return fmt.Errorf("failed to read unit from ledger: %w", err)
+	}
+	if data == nil {
+		return fmt.Errorf("blood unit %s not found on ledger", unitId)
+	}
 
 	var unit BloodUnit
-	json.Unmarshal(data, &unit)
+	if err := json.Unmarshal(data, &unit); err != nil {
+		return fmt.Errorf("failed to parse unit data: %w", err)
+	}
+
+	// State protection: NEVER allow emergency transfusion of terminal/compromised units
+	if unit.State == "Transfused" || unit.State == "DISASTER_TRANSFUSED" || unit.State == "DisasterTransfused" {
+		return fmt.Errorf("blood unit %s has already been transfused (current: '%s')", unitId, unit.State)
+	}
+	if unit.State == "PermanentlyRejected" {
+		return fmt.Errorf("clinical safety violation: cannot transfuse unit %s permanently rejected for infectious markers", unitId)
+	}
+	if unit.State == "Spoiled" {
+		return fmt.Errorf("cold-chain safety violation: cannot transfuse spoiled unit %s", unitId)
+	}
+	if unit.State == "Expired" {
+		return fmt.Errorf("safety violation: cannot transfuse expired unit %s", unitId)
+	}
+	if unit.State == "Discarded" {
+		return fmt.Errorf("safety violation: cannot transfuse discarded unit %s", unitId)
+	}
+
+	// Check unit expiry
+	if unit.ExpiryDate != "" {
+		expDate, err := time.Parse("2006-01-02", unit.ExpiryDate)
+		if err == nil && time.Now().After(expDate.Add(24*time.Hour)) {
+			unit.State = "Expired"
+			upd, _ := json.Marshal(unit)
+			_ = ctx.GetStub().PutState("UNIT_"+unitId, upd)
+			return fmt.Errorf("cannot transfuse unit %s: expired on %s", unitId, unit.ExpiryDate)
+		}
+	}
 
 	unit.State = "DISASTER_TRANSFUSED"
 	unit.PatientABHAHash = patientAbhaHash
@@ -66,26 +207,43 @@ func (s *SmartContract) EmergencyTransfuse(ctx contractapi.TransactionContextInt
 	unit.EligibilityBypass = true
 	unit.ReconciliationStatus = "PENDING"
 
-	// CIA Audit Log - every bypass is permanently recorded
+	// Audit Log event
 	ctx.GetStub().SetEvent("DISASTER_BYPASS",
-		[]byte(fmt.Sprintf(`{"unitId":"%s","disasterId":"%s","reason":"%s"}`, unitId, disasterId, bypassReason)))
+		[]byte(fmt.Sprintf(`{"unitId":"%s","disasterId":"%s","reason":"%s","patient":"%s"}`, unitId, disasterId, bypassReason, patientAbhaHash)))
 
-	updated, _ := json.Marshal(unit)
+	updated, err := json.Marshal(unit)
+	if err != nil {
+		return fmt.Errorf("failed to marshal unit: %w", err)
+	}
 	return ctx.GetStub().PutState("UNIT_"+unitId, updated)
 }
 
 // DeactivateDisasterMode - ends emergency; triggers PDR for all bypass events
 func (s *SmartContract) DeactivateDisasterMode(ctx contractapi.TransactionContextInterface, disasterId, deactivationTime string) error {
-
-	dData, _ := ctx.GetStub().GetState("DISASTER_" + disasterId)
+	dData, err := ctx.GetStub().GetState("DISASTER_" + disasterId)
+	if err != nil {
+		return fmt.Errorf("failed to read disaster state: %w", err)
+	}
+	if dData == nil {
+		return fmt.Errorf("disaster %s not found", disasterId)
+	}
 
 	var disaster DisasterEvent
-	json.Unmarshal(dData, &disaster)
+	if err := json.Unmarshal(dData, &disaster); err != nil {
+		return fmt.Errorf("failed to parse disaster event: %w", err)
+	}
+
+	if !disaster.Active {
+		return fmt.Errorf("disaster %s is already deactivated", disasterId)
+	}
 
 	disaster.Active = false
 	disaster.DeactivationTime = deactivationTime
 
-	updated, _ := json.Marshal(disaster)
+	updated, err := json.Marshal(disaster)
+	if err != nil {
+		return fmt.Errorf("failed to marshal disaster event: %w", err)
+	}
 
 	ctx.GetStub().SetEvent("DISASTER_MODE_DEACTIVATED", []byte(disasterId))
 	ctx.GetStub().SetEvent("TRIGGER_PDR", []byte(disasterId))

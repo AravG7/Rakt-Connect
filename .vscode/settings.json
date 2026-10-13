@@ -1,5 +1,19 @@
 {
   "python.defaultInterpreterPath": "C:\\Users\\aravg\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
   "python.analysis.extraPaths": [],
-  "python.analysis.typeCheckingMode": "basic"
+  "python.analysis.typeCheckingMode": "basic",
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "java.jdt.ls.java.home": "C:\\Program Files\\Android\\Android Studio\\jbr",
+  "gradle.java.home": "C:\\Program Files\\Android\\Android Studio\\jbr",
+  "java.configuration.runtimes": [
+    {
+      "name": "JavaSE-21",
+      "path": "C:\\Program Files\\Android\\Android Studio\\jbr",
+      "default": true
+    },
+    {
+      "name": "JavaSE-17",
+      "path": "C:\\Program Files\\Android\\Android Studio\\jbr"
+    }
+  ]
 }

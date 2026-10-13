@@ -11,6 +11,7 @@ const navItems = [
   { label: "Donor Management", icon: "👤", href: "/donors", section: "MANAGEMENT" },
   { label: "Unit Lifecycle", icon: "📦", href: "/units" },
   { label: "Analytics & AI", icon: "🧠", href: "/analytics", section: "INTELLIGENCE" },
+  { label: "Algorithm Lab", icon: "⚡", href: "/algorithms", badge: "DEMO", badgeType: "safe" },
   { label: "Hemovigilance", icon: "🛡️", href: "/hemovigilance" },
   { label: "Compliance", icon: "📋", href: "/compliance", section: "REGULATORY" },
   { label: "Rare Registry", icon: "🧬", href: "/rare-registry", section: "SPECIALIZED" },

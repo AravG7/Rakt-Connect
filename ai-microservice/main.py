@@ -14,14 +14,15 @@ import math
 app = FastAPI(
     title="Rakt-Connect AI Microservice",
     description="""
-    AI-powered blood demand forecasting, inventory optimization, donor retention,
-    and smart dispatch routing. Uses Temporal Fusion Transformer (TFT) architecture
-    with PySyft Federated Learning for privacy-preserving national-scale predictions.
+    Blood demand forecasting, inventory optimization, donor retention, and dispatch routing.
+    Currently serving calibrated clinical baseline heuristics and simulation models.
+    Pre-trained PyTorch Temporal Fusion Transformer (TFT) neural network weights and PySyft
+    Federated Learning are designated as planned work for GPU deployment.
     
     Blockchain = Memory (honest, untampered data)
-    AI = Brain (analyzes data to predict the future)
+    AI = Brain (calibrated demand forecasting and optimization)
     """,
-    version="3.0.0"
+    version="2.5.0"
 )
 
 # ── Request Models ─────────────────────────────────────────────────────────────

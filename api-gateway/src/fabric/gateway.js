@@ -52,7 +52,7 @@ class FabricGateway {
                 token: this.network.getContract('blood-bank', 'RaktToken')
             };
 
-            console.log("Hyperledger Fabric v3.0 Gateway (Modern SDK) Initialized Successfully.");
+            console.log("Hyperledger Fabric v2.5 LTS Gateway SDK Initialized Successfully.");
 
         } catch (error) {
             console.error(`Failed to connect to gateway: ${error}`);

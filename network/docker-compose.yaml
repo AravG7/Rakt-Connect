@@ -1,8 +1,9 @@
 # ═══════════════════════════════════════════════════════════════════════════════
-# RAKT-CONNECT — Docker Compose v2.0
-# Full Hyperledger Fabric Network + Supporting Services
-# 3 Orgs (Hospital, BloodBank, Lab) + 3 CouchDB + 3 CA + Orderer
-# API Gateway + AI Microservice + Monitoring
+# RAKT-CONNECT — Hyperledger Fabric v2.5 LTS Network (Local Topology)
+# 3 Organizations (Hospital, BloodBank, Lab) + 3 CouchDB + 3 CA + Raft Orderer
+# NOTE: Configured with 1 Raft Orderer for local development/testing.
+# Production deployments require a minimum of 3 Raft orderers across separate
+# failure domains for Crash Fault Tolerance (CFT) with quorum (N/2)+1.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 networks:
@@ -17,7 +18,7 @@ volumes:
 
 services:
   # ═══════════════════════════════════════════════════════════════════════════
-  # CERTIFICATE AUTHORITIES (Fabric CA)
+  # CERTIFICATE AUTHORITIES (Fabric CA v1.5)
   # ═══════════════════════════════════════════════════════════════════════════
 
   ca.hospital.raktconnect.com:
@@ -63,7 +64,7 @@ services:
       - rakt-network
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # ORDERER (Raft Consensus)
+  # ORDERER (Raft Consensus — Fabric v2.5)
   # ═══════════════════════════════════════════════════════════════════════════
 
   orderer1.raktconnect.com:
@@ -84,16 +85,18 @@ services:
       - ORDERER_GENERAL_CLUSTER_CLIENTCERTIFICATE=/var/hyperledger/orderer/tls/server.crt
       - ORDERER_GENERAL_CLUSTER_CLIENTPRIVATEKEY=/var/hyperledger/orderer/tls/server.key
       - ORDERER_GENERAL_CLUSTER_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
-      # Metrics for Prometheus
       - ORDERER_OPERATIONS_LISTENADDRESS=0.0.0.0:8443
       - ORDERER_METRICS_PROVIDER=prometheus
     working_dir: /opt/gopath/src/github.com/hyperledger/fabric
     command: orderer
     volumes:
+      - ./channel-artifacts/genesis.block:/var/hyperledger/orderer/orderer.genesis.block:ro
+      - ./crypto-config/ordererOrganizations/raktconnect.com/orderers/orderer1.raktconnect.com/msp:/var/hyperledger/orderer/msp:ro
+      - ./crypto-config/ordererOrganizations/raktconnect.com/orderers/orderer1.raktconnect.com/tls/:/var/hyperledger/orderer/tls:ro
       - orderer1.raktconnect.com:/var/hyperledger/production/orderer
     ports:
-      - 7050:7050
-      - 8443:8443
+      - "7050:7050"
+      - "8443:8443"
     networks:
       - rakt-network
 
@@ -131,20 +134,23 @@ services:
       - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.hospital.raktconnect.com:7051
       - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.hospital.raktconnect.com:7051
       - CORE_PEER_LOCALMSPID=HospitalMSP
-      # CouchDB for rich queries
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
       - CORE_LEDGER_STATE_STATEDATABASE=CouchDB
       - CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS=couchdb0:5984
       - CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME=admin
       - CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD=adminpw
-      # Metrics
       - CORE_OPERATIONS_LISTENADDRESS=0.0.0.0:9443
       - CORE_METRICS_PROVIDER=prometheus
     volumes:
       - /var/run/:/host/var/run/
+      - ./crypto-config/peerOrganizations/hospital.raktconnect.com/peers/peer0.hospital.raktconnect.com/msp:/etc/hyperledger/fabric/msp:ro
+      - ./crypto-config/peerOrganizations/hospital.raktconnect.com/peers/peer0.hospital.raktconnect.com/tls:/etc/hyperledger/fabric/tls:ro
+      - ./crypto-config:/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto:ro
+      - ./channel-artifacts:/opt/gopath/src/github.com/hyperledger/fabric/channel-artifacts:ro
       - peer0.hospital.raktconnect.com:/var/hyperledger/production
     ports:
-      - 7051:7051
-      - 9443:9443
+      - "7051:7051"
+      - "9443:9443"
     networks:
       - rakt-network
     depends_on:
@@ -184,6 +190,7 @@ services:
       - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.bloodbank.raktconnect.com:8051
       - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.bloodbank.raktconnect.com:8051
       - CORE_PEER_LOCALMSPID=BloodBankMSP
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
       - CORE_LEDGER_STATE_STATEDATABASE=CouchDB
       - CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS=couchdb1:5984
       - CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME=admin
@@ -192,10 +199,14 @@ services:
       - CORE_METRICS_PROVIDER=prometheus
     volumes:
       - /var/run/:/host/var/run/
+      - ./crypto-config/peerOrganizations/bloodbank.raktconnect.com/peers/peer0.bloodbank.raktconnect.com/msp:/etc/hyperledger/fabric/msp:ro
+      - ./crypto-config/peerOrganizations/bloodbank.raktconnect.com/peers/peer0.bloodbank.raktconnect.com/tls:/etc/hyperledger/fabric/tls:ro
+      - ./crypto-config:/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto:ro
+      - ./channel-artifacts:/opt/gopath/src/github.com/hyperledger/fabric/channel-artifacts:ro
       - peer0.bloodbank.raktconnect.com:/var/hyperledger/production
     ports:
-      - 8051:8051
-      - 10443:10443
+      - "8051:8051"
+      - "10443:10443"
     networks:
       - rakt-network
     depends_on:
@@ -235,6 +246,7 @@ services:
       - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.lab.raktconnect.com:9051
       - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.lab.raktconnect.com:9051
       - CORE_PEER_LOCALMSPID=LabMSP
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
       - CORE_LEDGER_STATE_STATEDATABASE=CouchDB
       - CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS=couchdb2:5984
       - CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME=admin
@@ -243,14 +255,54 @@ services:
       - CORE_METRICS_PROVIDER=prometheus
     volumes:
       - /var/run/:/host/var/run/
+      - ./crypto-config/peerOrganizations/lab.raktconnect.com/peers/peer0.lab.raktconnect.com/msp:/etc/hyperledger/fabric/msp:ro
+      - ./crypto-config/peerOrganizations/lab.raktconnect.com/peers/peer0.lab.raktconnect.com/tls:/etc/hyperledger/fabric/tls:ro
+      - ./crypto-config:/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto:ro
+      - ./channel-artifacts:/opt/gopath/src/github.com/hyperledger/fabric/channel-artifacts:ro
       - peer0.lab.raktconnect.com:/var/hyperledger/production
     ports:
-      - 9051:9051
-      - 11443:11443
+      - "9051:9051"
+      - "11443:11443"
     networks:
       - rakt-network
     depends_on:
       - couchdb2
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # FABRIC CLI UTILITY CONTAINER
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  cli:
+    container_name: rakt-cli
+    image: hyperledger/fabric-tools:2.5
+    tty: true
+    stdin_open: true
+    environment:
+      - GOPATH=/opt/gopath
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_ID=cli
+      - CORE_PEER_ADDRESS=peer0.hospital.raktconnect.com:7051
+      - CORE_PEER_LOCALMSPID=HospitalMSP
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/hospital.raktconnect.com/peers/peer0.hospital.raktconnect.com/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/hospital.raktconnect.com/peers/peer0.hospital.raktconnect.com/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/hospital.raktconnect.com/peers/peer0.hospital.raktconnect.com/tls/ca.crt
+      - CORE_PEER_MSPCONFIGPATH=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/hospital.raktconnect.com/users/Admin@hospital.raktconnect.com/msp
+    working_dir: /opt/gopath/src/github.com/hyperledger/fabric/peer
+    command: /bin/bash
+    volumes:
+      - /var/run/:/host/var/run/
+      - ../chaincode:/opt/gopath/src/github.com/chaincode
+      - ./crypto-config:/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto
+      - ./channel-artifacts:/opt/gopath/src/github.com/hyperledger/fabric/channel-artifacts
+    networks:
+      - rakt-network
+    depends_on:
+      - orderer1.raktconnect.com
+      - peer0.hospital.raktconnect.com
+      - peer0.bloodbank.raktconnect.com
+      - peer0.lab.raktconnect.com
 
   # ═══════════════════════════════════════════════════════════════════════════
   # APPLICATION SERVICES

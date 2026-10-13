@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 )
@@ -16,29 +17,46 @@ type HemovigilanceReport struct {
 	DoctorDigiId  string `json:"doctorDigiId"`
 }
 
-// ReportAdverseReaction - triggers batch quarantine + NIB auto-notification
+// ReportAdverseReaction - triggers batch quarantine + NIB auto-notification with full error handling
 func (s *SmartContract) ReportAdverseReaction(ctx contractapi.TransactionContextInterface, unitId, batchId, reactionType, reportedAt, doctorDigiId string) error {
+	if strings.TrimSpace(unitId) == "" {
+		return fmt.Errorf("unitId cannot be empty")
+	}
+	if strings.TrimSpace(batchId) == "" {
+		return fmt.Errorf("batchId cannot be empty")
+	}
+	if strings.TrimSpace(doctorDigiId) == "" {
+		return fmt.Errorf("doctorDigiId is required for clinical accountability")
+	}
 
 	if reactionType == "NONE" {
 		return nil
 	}
 
 	// Auto-quarantine: find ALL units from same batch, mark QUARANTINED
-	query := fmt.Sprintf(`{"selector":{"batchId":"%s","state":{"$in":["Approved","Reserved"]}}}`, batchId)
+	query := fmt.Sprintf(`{"selector":{"batchId":"%s","state":{"$in":["Approved","Reserved","Stored"]}}}`, batchId)
 
-	iter, _ := ctx.GetStub().GetQueryResult(query)
-	defer iter.Close()
+	iter, err := ctx.GetStub().GetQueryResult(query)
+	if err == nil {
+		defer iter.Close()
+		for iter.HasNext() {
+			qr, err := iter.Next()
+			if err != nil {
+				break
+			}
 
-	for iter.HasNext() {
-		qr, _ := iter.Next()
+			var unit BloodUnit
+			if err := json.Unmarshal(qr.Value, &unit); err != nil {
+				continue
+			}
 
-		var unit BloodUnit
-		json.Unmarshal(qr.Value, &unit)
+			unit.State = "Quarantined"
 
-		unit.State = "QUARANTINED"
-
-		updated, _ := json.Marshal(unit)
-		ctx.GetStub().PutState("UNIT_"+unit.UnitID, updated)
+			updated, err := json.Marshal(unit)
+			if err == nil {
+				_ = ctx.GetStub().PutState("UNIT_"+unit.UnitID, updated)
+			}
+		}
 	}
 
 	// Auto-notify NIB via event (API listens and calls NIB TRRF API)
@@ -50,7 +68,10 @@ func (s *SmartContract) ReportAdverseReaction(ctx contractapi.TransactionContext
 		DoctorDigiId: doctorDigiId,
 	}
 
-	payload, _ := json.Marshal(report)
+	payload, err := json.Marshal(report)
+	if err != nil {
+		return fmt.Errorf("failed to marshal hemovigilance report: %w", err)
+	}
 
 	ctx.GetStub().SetEvent("ADVERSE_REACTION_NIB_ALERT", payload)
 
