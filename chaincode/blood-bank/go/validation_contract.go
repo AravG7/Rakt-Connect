@@ -14,8 +14,9 @@ type TestResults struct {
 	HBsAg    string `json:"HBsAg"`    // NEGATIVE | POSITIVE (Hepatitis B surface antigen)
 	HCV      string `json:"HCV"`      // NEGATIVE | POSITIVE (Hepatitis C)
 	Malaria  string `json:"Malaria"`  // NEGATIVE | POSITIVE
-	Syphilis string `json:"Syphilis"` // NEGATIVE | POSITIVE
-	Hb       string `json:"Hb"`       // Hemoglobin (g/dL, minimum 12.5 for donor safety)
+	Syphilis  string `json:"Syphilis"` // NEGATIVE | POSITIVE
+	Hb        string `json:"Hb"`       // Hemoglobin (g/dL, minimum 12.5 for donor safety)
+	Platelets string `json:"Platelets,omitempty"` // Platelets
 }
 
 // VerifiedLabSubmission encapsulates lab technician credentials, results, and digital signature
@@ -110,6 +111,7 @@ func (s *SmartContract) SubmitTestResult(ctx contractapi.TransactionContextInter
 		results.Malaria,
 		results.Syphilis,
 		results.Hb,
+		results.Platelets,
 		labSubmission.TestTimestamp,
 	)
 	if err := verifyCryptographicSignature(labSubmission.PublicKeyPEM, canonicalPayload, labSubmission.DigitalSignature); err != nil {

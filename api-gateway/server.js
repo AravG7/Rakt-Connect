@@ -9,7 +9,6 @@ const {
   requireDonorOrClinicalStaff,
   signToken,
   ROLES,
-  ADMIN_SERVICE_KEY,
   verifyAdminCredentials
 } = require('./src/middleware/auth');
 const PQCVault = require('./src/crypto/pqcVault');
@@ -56,8 +55,10 @@ const PORT = process.env.PORT || 3001;
 const donors = defaultEntityStore.loadMap('donors');
 const units = defaultEntityStore.loadMap('units');
 const broadcasts = defaultEntityStore.loadMap('broadcasts');
-const transfers = defaultEntityStore.loadMap('transfers');
+const _transfers = defaultEntityStore.loadMap('transfers');
 const hemoReports = defaultEntityStore.loadMap('hemoReports');
+const disasterEvents = defaultEntityStore.loadMap('disasterEvents');
+const insuranceClaims = defaultEntityStore.loadMap('insuranceClaims');
 const otpStore = new Map();
 const otpRateLimits = new Map(); // abhaId -> { count, windowStart, lastRequestTime, failedAttempts }
 const auditLog = defaultEntityStore.loadList('auditLog');
@@ -130,6 +131,7 @@ function logAudit(eventType, actor, unitId, details) {
     txHash: `0x${crypto.randomBytes(16).toString('hex')}`
   };
   auditLog.unshift(entry);
+  defaultEntityStore.saveList('auditLog', auditLog);
   return entry;
 }
 
@@ -340,6 +342,7 @@ app.post('/auth/verify-otp', (req, res) => {
   }
 
   const did = generateDID(abhaId);
+  const isProduction = process.env.NODE_ENV === 'production';
   const token = signToken({
     id: did,
     did,
@@ -349,12 +352,17 @@ app.post('/auth/verify-otp', (req, res) => {
   });
 
   res.json({
-    message: 'ABHA OTP verified — session token issued',
+    message: isProduction
+      ? 'ABHA OTP verified (simulated ABDM flow pending live gateway authorization)'
+      : 'ABHA OTP verified — session token issued',
     abhaId,
     token,
     role: ROLES.DONOR,
     expiresIn: '24h',
-    did
+    did,
+    authMode: isProduction ? 'SIMULATED_AWAITING_ABDM_CREDENTIALS' : 'DEV_SANDBOX_SIMULATION',
+    identityVerified: false,
+    verificationNote: 'Real ABDM identity verification requires active NHA/ABDM production gateway onboarding.'
   });
 });
 
@@ -413,11 +421,12 @@ app.post('/donor/register', async (req, res) => {
   };
 
   donors.set(did, donor);
+  defaultEntityStore.saveMap('donors', donors);
   logAudit('DONOR_REGISTERED', did, '', `New donor registered: ${bloodGroup} (DPDP Consent Verified)`);
 
   // Submit transaction to Hyperledger Fabric Ledger via Gateway SDK
   let fabricTxId = null;
-  let ledgerStatus = 'COMMITTED_LOCAL_CACHE';
+  let ledgerStatus = 'PENDING_LEDGER_SYNC';
   try {
     if (fabricGateway.contracts && fabricGateway.contracts.donorEligibility) {
       const commitRes = await fabricGateway.submitTransaction(
@@ -429,11 +438,24 @@ app.post('/donor/register', async (req, res) => {
         donor.consentTimestamp
       );
       ledgerStatus = 'COMMITTED_FABRIC_LEDGER';
-      fabricTxId = commitRes && commitRes.length ? commitRes.toString() : `tx-${uuidv4().replace(/-/g, '')}`;
+      fabricTxId = commitRes.txId || null;
+    } else {
+      defaultOutbox.enqueue({
+        contractName: 'donorEligibility',
+        transactionName: 'RegisterDonor',
+        args: [did, abhaHash, bloodGroup, donor.consentTimestamp],
+        idempotencyKey: `donor-${did}`
+      });
     }
   } catch (err) {
-    logger.warn(`Fabric ledger transaction deferred: ${err.message}`);
-    ledgerStatus = 'COMMITTED_LOCAL_RESILIENT_SYNC';
+    logger.warn(`Fabric ledger transaction deferred to outbox: ${err.message}`);
+    defaultOutbox.enqueue({
+      contractName: 'donorEligibility',
+      transactionName: 'RegisterDonor',
+      args: [did, abhaHash, bloodGroup, donor.consentTimestamp],
+      idempotencyKey: `donor-${did}`
+    });
+    ledgerStatus = 'PENDING_LEDGER_SYNC';
   }
 
   res.status(201).json({
@@ -509,7 +531,7 @@ app.post('/donor/consent', authenticate, async (req, res) => {
       ledgerStatus = 'COMMITTED_FABRIC_LEDGER';
       fabricTxId = commitRes && commitRes.length ? commitRes.toString() : null;
     }
-  } catch (err) {
+  } catch (_err) {
     defaultOutbox.enqueue({
       contractName: 'donorEligibility',
       transactionName: 'UpdateConsent',
@@ -590,11 +612,12 @@ app.post('/unit/collect', authenticate, requireRole(ROLES.HOSPITAL_ADMIN, ROLES.
   };
 
   units.set(unitId, unit);
+  defaultEntityStore.saveMap('units', units);
   logAudit('UNIT_COLLECTED', donorDid, unitId, `${bloodGroup} ${component} ${vol}ml collected`);
 
   // Submit transaction to Hyperledger Fabric Ledger via Gateway SDK
   let fabricTxId = null;
-  let ledgerStatus = 'COMMITTED_LOCAL_CACHE';
+  let ledgerStatus = 'PENDING_LEDGER_SYNC';
   try {
     if (fabricGateway.contracts && fabricGateway.contracts.lifecycle) {
       const commitRes = await fabricGateway.submitTransaction(
@@ -609,11 +632,24 @@ app.post('/unit/collect', authenticate, requireRole(ROLES.HOSPITAL_ADMIN, ROLES.
         'BATCH-01'
       );
       ledgerStatus = 'COMMITTED_FABRIC_LEDGER';
-      fabricTxId = commitRes && commitRes.length ? commitRes.toString() : `tx-${uuidv4().replace(/-/g, '')}`;
+      fabricTxId = commitRes.txId || null;
+    } else {
+      defaultOutbox.enqueue({
+        contractName: 'lifecycle',
+        transactionName: 'CollectUnit',
+        args: [unitId, donorDid, bloodGroup, component, String(vol), new Date(ts * 1000).toISOString(), 'BATCH-01'],
+        idempotencyKey: `unit-${unitId}`
+      });
     }
   } catch (err) {
-    logger.warn(`Fabric ledger transaction deferred: ${err.message}`);
-    ledgerStatus = 'COMMITTED_LOCAL_RESILIENT_SYNC';
+    logger.warn(`Fabric ledger transaction deferred to outbox: ${err.message}`);
+    defaultOutbox.enqueue({
+      contractName: 'lifecycle',
+      transactionName: 'CollectUnit',
+      args: [unitId, donorDid, bloodGroup, component, String(vol), new Date(ts * 1000).toISOString(), 'BATCH-01'],
+      idempotencyKey: `unit-${unitId}`
+    });
+    ledgerStatus = 'PENDING_LEDGER_SYNC';
   }
 
   res.status(201).json({
@@ -682,6 +718,7 @@ app.post('/unit/test-result', authenticate, requireRole(ROLES.LAB_TECH, ROLES.HO
   unit.labLicenseNo = labLicenseNo || 'NABL-LAB-KA-091';
   unit.labIsSafe = Boolean(determinedSafe);
   unit.state = determinedSafe ? 'APPROVED' : 'REJECTED';
+  defaultEntityStore.saveMap('units', units);
 
   logAudit(
     'LAB_RESULTS_SEALED',
@@ -797,7 +834,7 @@ app.post('/broadcast/emergency', authenticate, requireRole(ROLES.HOSPITAL_ADMIN,
 
 // POST /broadcast/:id/respond — Donor responds to EBM (Protected: owning Donor)
 app.post('/broadcast/:id/respond', authenticate, (req, res) => {
-  const { donorDid, response, deviceId } = req.body;
+  const { donorDid, response } = req.body;
   if (!donorDid) return res.status(400).json({ error: 'donorDid is required' });
 
   // Ownership verification: A donor cannot respond as another donor
@@ -880,9 +917,9 @@ app.post('/transfusion/confirm', authenticate, requireRole(ROLES.MEDICAL_OFFICER
   const taxReceipt = {
     form: 'Form 10BE',
     donorDid: unit.donorDid,
-    status: 'AUTO_GENERATED',
-    section65BStatus: 'COURT_ADMISSIBLE_CERTIFIED',
-    note: 'Direct ITD e-Filing submission marked as planned work pending NGO 80G onboarding'
+    status: 'AUTO_GENERATED_PROTOTYPE',
+    section65BStatus: 'PROTOTYPE_DEMO_RECORD',
+    note: 'Direct ITD e-Filing submission and certified Section 65B filing marked as planned work pending NGO 80G onboarding'
   };
 
   const hvId = `HV-${uuidv4().substring(0, 6).toUpperCase()}`;
@@ -900,6 +937,10 @@ app.post('/transfusion/confirm', authenticate, requireRole(ROLES.MEDICAL_OFFICER
     donor.raktTokens += 300;
     donor.tier = calculateTier(donor.raktTokens);
   }
+
+  defaultEntityStore.saveMap('units', units);
+  defaultEntityStore.saveMap('donors', donors);
+  defaultEntityStore.saveMap('hemoReports', hemoReports);
 
   logAudit(
     'TRANSFUSION_COMPLETED',
@@ -941,7 +982,6 @@ app.post('/transfusion/:hvId/hemovigilance', authenticate, requireRole(ROLES.MED
 // DISASTER MODE MODULE (Black Swan Protocol — Repaired Multi-Sig & State Controls)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const disasterEvents = new Map();
 let disasterModeActive = false;
 
 // POST /disaster/request — Request disaster mode activation
@@ -980,6 +1020,7 @@ app.post('/disaster/request', authenticate, requireRole(ROLES.DISASTER_ADMIN, RO
   };
 
   disasterEvents.set(event.eventId, event);
+  defaultEntityStore.saveMap('disasterEvents', disasterEvents);
   logAudit('DISASTER_REQUESTED', req.user.id, null, `Disaster mode requested: ${title} (${severity})`);
 
   res.status(201).json({ event, message: `Requires ${approvalsRequired} multi-sig approvals from distinct authorized signers` });
@@ -1031,6 +1072,8 @@ app.post('/disaster/:eventId/approve', authenticate, requireRole(ROLES.DISASTER_
     disasterModeActive = true;
     logAudit('DISASTER_ACTIVATED', authorityId, null, `DISASTER MODE ACTIVATED: ${event.title}`);
   }
+
+  defaultEntityStore.saveMap('disasterEvents', disasterEvents);
 
   res.json({
     event,
@@ -1091,6 +1134,8 @@ app.post('/disaster/:eventId/batch-release', authenticate, requireRole(ROLES.DIS
   };
 
   event.batchReleases.push(batch);
+  defaultEntityStore.saveMap('disasterEvents', disasterEvents);
+  defaultEntityStore.saveMap('units', units);
   logAudit('BATCH_RELEASE', authorizedBy || req.user.id, null, `Batch released: ${batch.unitsCount} units to ${destinationHfr}`);
 
   res.json({
@@ -1247,28 +1292,29 @@ app.post('/crypto/vault/encrypt', (req, res) => {
 
 // POST /crypto/vault/decrypt — Decrypt vault package (Restricted to Authorized Clinical Staff / Hospital Admin)
 app.post('/crypto/vault/decrypt', authenticate, requireRole(ROLES.HOSPITAL_ADMIN, ROLES.BLOODBANK_ADMIN, ROLES.MEDICAL_OFFICER), (req, res) => {
-  const { vaultPackage, privateKeyHex } = req.body;
+  if (req.body.privateKeyHex !== undefined) {
+    return res.status(400).json({
+      error: 'Direct transmission of private keys over HTTP is prohibited. Decryption keys are managed by server KeyStore.',
+      code: 'PRIVATE_KEY_PARAM_FORBIDDEN'
+    });
+  }
+
+  const { vaultPackage, aad } = req.body;
   if (!vaultPackage) {
     return res.status(400).json({ error: 'vaultPackage is required' });
   }
 
-  let skBuffer;
-  if (privateKeyHex) {
-    skBuffer = Buffer.from(privateKeyHex, 'hex');
-  } else {
-    // Automatically match appropriate private key from managed key store
-    const matchedKey = defaultKeyStore.getKeyByIdOrPublicKey(vaultPackage.keyId);
-    if (!matchedKey) {
-      return res.status(404).json({
-        error: 'Appropriate decryption key for this vault package not found in server key store',
-        code: 'PQC_KEY_NOT_FOUND'
-      });
-    }
-    skBuffer = matchedKey.privateKey;
+  // Strictly retrieve authorized decryption key from encrypted server-managed key store
+  const matchedKey = defaultKeyStore.getKeyByIdOrPublicKey(vaultPackage.keyId);
+  if (!matchedKey) {
+    return res.status(404).json({
+      error: 'Appropriate decryption key for this vault package not found in server key store',
+      code: 'PQC_KEY_NOT_FOUND'
+    });
   }
 
   try {
-    const decrypted = PQCVault.decryptVault(vaultPackage, skBuffer, vaultPackage.aad || 'DPDP_SECTION_43A');
+    const decrypted = PQCVault.decryptVault(vaultPackage, matchedKey.privateKey, aad || vaultPackage.aad || 'DPDP_SECTION_43A');
     res.json({
       decryptedData: decrypted,
       message: 'Health record decrypted successfully from post-quantum vault'
@@ -1395,31 +1441,44 @@ app.post('/fabric/commit-transaction', authenticate, requireRole(ROLES.HOSPITAL_
         source: 'FABRIC_GATEWAY_PEER',
         contract,
         functionName,
-        txId: `tx-${uuidv4().replace(/-/g, '')}`,
-        blockStatus: 'VALID_COMMITTED_BLOCK',
-        result: commitRes ? commitRes.toString() : 'SUCCESS'
+        txId: commitRes.txId,
+        blockStatus: commitRes.blockNumber ? `COMMITTED_BLOCK_${commitRes.blockNumber}` : 'VALID_COMMITTED_BLOCK',
+        result: commitRes.result ? commitRes.result.toString() : 'SUCCESS'
       });
     } else {
+      const enqueued = defaultOutbox.enqueue({
+        contractName: contract,
+        transactionName: functionName,
+        args: txArgs,
+        reason: 'GATEWAY_STANDBY_MAPPING'
+      });
       return res.json({
-        status: 'GATEWAY_ROUTED',
-        source: 'FABRIC_GATEWAY_STANDBY',
+        status: 'PENDING_LEDGER_SYNC',
+        source: 'DURABLE_OUTBOX_QUEUE',
         contract,
         functionName,
-        txId: `tx-commit-${uuidv4().replace(/-/g, '')}`,
-        blockStatus: 'COMMITTED_TO_CONTRACT_MAPPING',
-        note: 'Gateway transaction dispatched via @hyperledger/fabric-gateway contract definition'
+        txId: enqueued.idempotencyKey,
+        outboxId: enqueued.outboxId,
+        blockStatus: 'OFFLINE_PENDING_QUEUE',
+        note: 'Contract definition mapped; transaction enqueued for asynchronous peer endorsement'
       });
     }
   } catch (err) {
-    // When running without live peer daemon (e.g. unit test or offline dev), provide resilient fallback confirmation
-    logger.warn(`Fabric gateway submission deferred to local resilient cache: ${err.message}`);
+    logger.warn(`Fabric gateway submission deferred to outbox: ${err.message}`);
+    const enqueued = defaultOutbox.enqueue({
+      contractName: contract,
+      transactionName: functionName,
+      args: txArgs,
+      reason: `Peer offline: ${err.message}`
+    });
     return res.json({
-      status: 'GATEWAY_ROUTED_OFFLINE_RESILIENT',
-      source: 'FABRIC_GATEWAY_STANDBY',
+      status: 'PENDING_LEDGER_SYNC',
+      source: 'DURABLE_OUTBOX_QUEUE',
       contract,
       functionName,
-      txId: `tx-resilient-${uuidv4().replace(/-/g, '')}`,
-      blockStatus: 'COMMITTED_TO_LOCAL_RESILIENT_LOG',
+      txId: enqueued.idempotencyKey,
+      outboxId: enqueued.outboxId,
+      blockStatus: 'OFFLINE_PENDING_QUEUE',
       peerStatus: 'OFFLINE_STANDBY',
       note: `Fabric gateway received transaction. Endorsement deferred while peer is in standby mode: ${err.message}`
     });
@@ -1430,7 +1489,7 @@ app.post('/fabric/commit-transaction', authenticate, requireRole(ROLES.HOSPITAL_
 // TAX AUTOMATION ROUTES (Section 80G Receipts)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-app.post('/tax/generate-80g', authenticate, (req, res) => {
+app.post('/tax/generate-80g', authenticate, requireRole(ROLES.DONOR, ROLES.HOSPITAL_ADMIN, ROLES.BLOODBANK_ADMIN, ROLES.AUDITOR), (req, res) => {
   const { donorDid, unitId } = req.body;
 
   if (!donorDid || !unitId) {
@@ -1471,8 +1530,6 @@ app.post('/tax/generate-80g', authenticate, (req, res) => {
 // INSURANCE ROUTES (NHCX Auto-Adjudication Simulator)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const insuranceClaims = new Map();
-
 // POST /insurance/claim — NHCX Auto-Adjudication Simulator (Protected: Clinical/Hospital Staff)
 app.post('/insurance/claim', authenticate, requireRole(ROLES.HOSPITAL_ADMIN, ROLES.BLOODBANK_ADMIN, ROLES.MEDICAL_OFFICER), (req, res) => {
   const { unitId, patientAbha, insurerCode, policyNumber } = req.body;
@@ -1481,6 +1538,20 @@ app.post('/insurance/claim', authenticate, requireRole(ROLES.HOSPITAL_ADMIN, ROL
   }
 
   const claimId = `CLM-SIM-${uuidv4().substring(0, 6).toUpperCase()}`;
+  const claimRecord = {
+    claimId,
+    nhcxMode: 'SANDBOX_SIMULATOR',
+    status: 'SIMULATED_DEMO_SUBMISSION',
+    unitId,
+    patientAbha,
+    insurerCode: insurerCode || 'PM_JAY',
+    policyNumber: policyNumber || 'POL-SIM-2026',
+    submittedBy: req.user.id || req.user.name,
+    createdAt: new Date().toISOString()
+  };
+  insuranceClaims.set(claimId, claimRecord);
+  defaultEntityStore.saveMap('insuranceClaims', insuranceClaims);
+
   res.json({
     message: 'Insurance claim submitted to NHCX protocol demonstration router',
     claimId,
@@ -1532,7 +1603,7 @@ app.get('/ai/predict/:hospitalId', async (req, res) => {
         isMock: false
       });
     }
-  } catch (error) {
+  } catch (_error) {
     // Microservice offline
   }
 
@@ -1577,6 +1648,14 @@ const errorHandler = require('./src/utils/errorHandler');
 app.use(errorHandler);
 
 if (require.main === module) {
+  try {
+    const { validateConfig } = require('./scripts/validate-config');
+    validateConfig();
+  } catch (err) {
+    console.error(`[FATAL] Configuration preflight failed: ${err.message}`);
+    process.exit(1);
+  }
+
   app.listen(PORT, () => {
     console.log(`
     ╔══════════════════════════════════════════════════╗
@@ -1591,5 +1670,16 @@ if (require.main === module) {
     `);
   });
 }
+
+app._stores = {
+  donors,
+  units,
+  broadcasts,
+  hemoReports,
+  disasterEvents,
+  insuranceClaims,
+  auditLog,
+  defaultEntityStore
+};
 
 module.exports = app;

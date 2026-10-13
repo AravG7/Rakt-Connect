@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"strings"
 	"time"
@@ -137,15 +138,33 @@ func (s *SmartContract) UpdateLastDonation(ctx contractapi.TransactionContextInt
 }
 
 // RegisterPractitionerKey - registers an authorized medical officer or lab technician public key on ledger
+// Enforces caller authorization, valid PEM format, and immutability (cannot overwrite existing keys).
 func (s *SmartContract) RegisterPractitionerKey(ctx contractapi.TransactionContextInterface, practitionerId, pubKeyPEM string) error {
-	if strings.TrimSpace(practitionerId) == "" {
+	trimmedId := strings.TrimSpace(practitionerId)
+	if trimmedId == "" {
 		return fmt.Errorf("practitionerId cannot be empty")
 	}
-	if strings.TrimSpace(pubKeyPEM) == "" {
+	trimmedPEM := strings.TrimSpace(pubKeyPEM)
+	if trimmedPEM == "" {
 		return fmt.Errorf("pubKeyPEM cannot be empty")
 	}
+
+	block, _ := pem.Decode([]byte(trimmedPEM))
+	if block == nil {
+		return fmt.Errorf("invalid PEM format for practitioner public key")
+	}
+
 	if err := verifyCallerMSP(ctx, "HospitalMSP", "HospitalOrgMSP", "BloodBankMSP", "BloodBankOrgMSP", "Org1MSP", "Org2MSP"); err != nil {
 		return err
 	}
-	return ctx.GetStub().PutState("PRACTITIONER_KEY_"+practitionerId, []byte(strings.TrimSpace(pubKeyPEM)))
+
+	existingKey, err := ctx.GetStub().GetState("PRACTITIONER_KEY_" + trimmedId)
+	if err != nil {
+		return fmt.Errorf("failed to read from ledger: %w", err)
+	}
+	if existingKey != nil && len(existingKey) > 0 {
+		return fmt.Errorf("practitioner %s is already enrolled: practitioner public keys are immutable and cannot be overwritten", trimmedId)
+	}
+
+	return ctx.GetStub().PutState("PRACTITIONER_KEY_"+trimmedId, []byte(trimmedPEM))
 }

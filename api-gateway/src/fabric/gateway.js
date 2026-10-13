@@ -33,6 +33,15 @@ class FabricGateway {
             const privateKeyPem = identityData.credentials.privateKey;
 
             const client = await this.newGrpcConnection();
+            if (this.requireFabric) {
+                await new Promise((resolve, reject) => {
+                    client.waitForReady(Date.now() + 5000, (err) => {
+                        if (err) return reject(new Error(`Fabric peer at ${this.peerEndpoint} failed readiness check: ${err.message}`));
+                        resolve();
+                    });
+                });
+            }
+
             this.gateway = connect({
                 client,
                 identity: { mspId: this.mspId, credentials: Buffer.from(cert) },
@@ -84,8 +93,25 @@ class FabricGateway {
         try {
             const contract = (contractName && this.contracts && this.contracts[contractName]) || this.contract;
             if (!contract) throw new Error(`Contract ${contractName || 'default'} not mapped or gateway not connected`);
+
+            if (typeof contract.newProposal === 'function') {
+                const proposal = contract.newProposal(tcnName, { arguments: args });
+                const txId = proposal.getTransactionId();
+                const transaction = await proposal.endorse();
+                const commit = await transaction.submit();
+                const result = transaction.getResult();
+                return {
+                    result: Buffer.from(result || []),
+                    txId: txId,
+                    blockNumber: commit && typeof commit.getBlockNumber === 'function' ? commit.getBlockNumber() : null
+                };
+            }
+
             const result = await contract.submitTransaction(tcnName, ...args);
-            return result;
+            return {
+                result: Buffer.from(result || []),
+                txId: `tx-${Date.now()}`
+            };
         } catch (error) {
             console.error(`SubmitTcn ${tcnName} failed: ${error}`);
             throw error;

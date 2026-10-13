@@ -36,6 +36,8 @@ type BloodUnit struct {
 type MOAuthorization struct {
 	DoctorID         string `json:"doctorId"`
 	CouncilRegNo     string `json:"councilRegNo"`
+	SourceHFR        string `json:"sourceHfr,omitempty"`
+	DestHFR          string `json:"destHfr,omitempty"`
 	DigitalSignature string `json:"digitalSignature"`
 	PublicKeyPEM     string `json:"publicKeyPEM,omitempty"`
 	Timestamp        string `json:"timestamp"`
@@ -268,7 +270,7 @@ func (s *SmartContract) AuthorizeTransport(ctx contractapi.TransactionContextInt
 	}
 
 	// Canonical payload covering all consequential fields
-	canonicalPayload := buildCanonicalMOAuthPayload(unitId, moAuth.DoctorID, moAuth.CouncilRegNo, moAuth.Timestamp)
+	canonicalPayload := buildCanonicalMOAuthPayload(unitId, moAuth.DoctorID, moAuth.CouncilRegNo, moAuth.SourceHFR, moAuth.DestHFR, moAuth.Timestamp)
 	if err := verifyCryptographicSignature(moAuth.PublicKeyPEM, canonicalPayload, moAuth.DigitalSignature); err != nil {
 		return fmt.Errorf("cryptographic verification failed for Medical Officer authorization: %w", err)
 	}

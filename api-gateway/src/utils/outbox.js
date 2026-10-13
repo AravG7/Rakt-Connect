@@ -128,7 +128,7 @@ class DurableLedgerOutbox {
         );
 
         item.status = 'COMMITTED';
-        item.fabricTxId = result && result.length ? result.toString() : `committed-sync-${Date.now()}`;
+        item.fabricTxId = (result && result.txId) || (result && result.length ? result.toString() : `committed-sync-${Date.now()}`);
         item.lastError = null;
         succeeded++;
       } catch (err) {

@@ -19,6 +19,11 @@ type TaxReceipt struct {
 
 // Generate80GReceipt - Generates 80G Tax receipt linked to transfusion
 func (s *SmartContract) Generate80GReceipt(ctx contractapi.TransactionContextInterface, donorId string, unitId string) (*TaxReceipt, error) {
+	// Verify caller MSP
+	if err := verifyCallerMSP(ctx, "HospitalMSP", "HospitalOrgMSP", "BloodBankMSP", "BloodBankOrgMSP", "Org1MSP", "Org2MSP"); err != nil {
+		return nil, err
+	}
+
 	// 1. Verify blood unit was successfully "Transfused" or "Processed"
 	unitData, err := ctx.GetStub().GetState("UNIT_" + unitId)
 	if err != nil || unitData == nil {

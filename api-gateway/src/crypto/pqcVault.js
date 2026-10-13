@@ -17,9 +17,9 @@ try {
 const ML_KEM_768_PUBLIC_KEY_BYTES = 1184;
 const ML_KEM_768_CIPHERTEXT_BYTES = 1088;
 const ML_KEM_768_PRIVATE_KEY_BYTES = 2400;
-const SHARED_SECRET_BYTES = 32;
+const _SHARED_SECRET_BYTES = 32;
 const AES_GCM_IV_BYTES = 12;
-const AES_GCM_TAG_BYTES = 16;
+const _AES_GCM_TAG_BYTES = 16;
 const DEFAULT_HKDF_SALT = 'RaktConnect_PQC_System_Salt_Verification_V1';
 
 class PQCVault {

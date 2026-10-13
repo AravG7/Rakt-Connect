@@ -22,6 +22,7 @@ type DisasterEvent struct {
 type AdminSignature struct {
 	AdminID       string `json:"adminId"`
 	Role          string `json:"role"`
+	Severity      string `json:"severity,omitempty"`
 	SignatureHash string `json:"signatureHash"`
 	PublicKeyPEM  string `json:"publicKeyPEM,omitempty"`
 	Timestamp     string `json:"timestamp"`
@@ -72,7 +73,7 @@ func parseAndValidateAdminSig(ctx contractapi.TransactionContextInterface, disas
 	}
 
 	// 2. Cryptographic signature check against canonical disaster activation payload (all consequential fields)
-	sigData := buildCanonicalDisasterPayload(disasterId, sig.AdminID, sig.Role, radius, sig.Timestamp)
+	sigData := buildCanonicalDisasterPayload(disasterId, sig.AdminID, sig.Role, radius, sig.Severity, sig.Timestamp)
 	if err := verifyCryptographicSignature(sig.PublicKeyPEM, sigData, sig.SignatureHash); err != nil {
 		return nil, fmt.Errorf("cryptographic verification failed for admin %s: %w", sig.AdminID, err)
 	}

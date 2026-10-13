@@ -131,7 +131,7 @@ class FHIRValidator {
   /**
    * Validates FHIR R4 Observation
    */
-  static validateObservation(obs, errors, warnings) {
+  static validateObservation(obs, errors, _warnings) {
     if (!obs.id) {
       errors.push("Observation must contain 'id'");
     }
@@ -153,7 +153,7 @@ class FHIRValidator {
   /**
    * Validates FHIR R4 Bundle
    */
-  static validateBundle(bundle, errors, warnings) {
+  static validateBundle(bundle, errors, _warnings) {
     if (!bundle.id) {
       errors.push("Bundle must contain 'id'");
     }

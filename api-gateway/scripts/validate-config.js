@@ -81,7 +81,10 @@ function validateConfig() {
   }
 
   console.log('\n[PASS] All configuration checks passed successfully. Gateway is ready for deployment.');
-  process.exit(0);
+  if (require.main === module) {
+    process.exit(0);
+  }
+  return true;
 }
 
 if (require.main === module) {

@@ -10,6 +10,8 @@ import (
 
 // ReconciliationAuth represents a verified medical reconciliation authorization
 type ReconciliationAuth struct {
+	EventID          string `json:"eventId,omitempty"`
+	UnitCount        int    `json:"unitCount,omitempty"`
 	DoctorID         string `json:"doctorId"`
 	CouncilRegNo     string `json:"councilRegNo"`
 	DigitalSignature string `json:"digitalSignature"`
@@ -57,7 +59,7 @@ func (s *SmartContract) ReconcileUnit(ctx contractapi.TransactionContextInterfac
 	}
 
 	// 2. Cryptographic signature check against canonical reconciliation payload (all consequential fields)
-	reconData := buildCanonicalReconPayload(unitId, reconAuth.DoctorID, reconAuth.CouncilRegNo, reconAuth.ClinicalReview, reconAuth.Timestamp)
+	reconData := buildCanonicalReconPayload(reconAuth.EventID, reconAuth.UnitCount, unitId, reconAuth.DoctorID, reconAuth.CouncilRegNo, reconAuth.ClinicalReview, reconAuth.Timestamp)
 	if err := verifyCryptographicSignature(reconAuth.PublicKeyPEM, reconData, reconAuth.DigitalSignature); err != nil {
 		return fmt.Errorf("cryptographic verification failed for reconciliation: %w", err)
 	}
@@ -151,7 +153,7 @@ func (s *SmartContract) ReconcileDisasterLogs(ctx contractapi.TransactionContext
 			var reconAuth ReconciliationAuth
 			if err := json.Unmarshal([]byte(unit.MOeSignature), &reconAuth); err == nil &&
 				reconAuth.DoctorID != "" && reconAuth.DigitalSignature != "" && reconAuth.PublicKeyPEM != "" {
-				reconData := buildCanonicalReconPayload(unit.UnitID, reconAuth.DoctorID, reconAuth.CouncilRegNo, reconAuth.ClinicalReview, reconAuth.Timestamp)
+				reconData := buildCanonicalReconPayload(reconAuth.EventID, reconAuth.UnitCount, unit.UnitID, reconAuth.DoctorID, reconAuth.CouncilRegNo, reconAuth.ClinicalReview, reconAuth.Timestamp)
 				if err := verifyCryptographicSignature(reconAuth.PublicKeyPEM, reconData, reconAuth.DigitalSignature); err == nil {
 					if err := verifySignerTrust(ctx, reconAuth.DoctorID, reconAuth.PublicKeyPEM); err == nil {
 						verified = true
@@ -161,7 +163,7 @@ func (s *SmartContract) ReconcileDisasterLogs(ctx contractapi.TransactionContext
 				var moAuth MOAuthorization
 				if err := json.Unmarshal([]byte(unit.MOeSignature), &moAuth); err == nil &&
 					moAuth.DoctorID != "" && moAuth.DigitalSignature != "" && moAuth.PublicKeyPEM != "" {
-					moData := buildCanonicalMOAuthPayload(unit.UnitID, moAuth.DoctorID, moAuth.CouncilRegNo, moAuth.Timestamp)
+					moData := buildCanonicalMOAuthPayload(unit.UnitID, moAuth.DoctorID, moAuth.CouncilRegNo, moAuth.SourceHFR, moAuth.DestHFR, moAuth.Timestamp)
 					if err := verifyCryptographicSignature(moAuth.PublicKeyPEM, moData, moAuth.DigitalSignature); err == nil {
 						if err := verifySignerTrust(ctx, moAuth.DoctorID, moAuth.PublicKeyPEM); err == nil {
 							verified = true

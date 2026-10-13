@@ -15,6 +15,16 @@ describe('Rakt-Connect API Gateway', () => {
   let testDonorDid;
 
   beforeAll(() => {
+    if (app._stores) {
+      app._stores.donors.clear();
+      app._stores.units.clear();
+      app._stores.disasterEvents.clear();
+      app._stores.hemoReports.clear();
+      app._stores.insuranceClaims.clear();
+      app._stores.defaultEntityStore.saveMap('donors', app._stores.donors);
+      app._stores.defaultEntityStore.saveMap('units', app._stores.units);
+      app._stores.defaultEntityStore.saveMap('disasterEvents', app._stores.disasterEvents);
+    }
     adminToken = signToken({ id: 'admin-1', role: ROLES.HOSPITAL_ADMIN, name: 'Admin User' });
     labTechToken = signToken({ id: 'lab-1', role: ROLES.LAB_TECH, name: 'Lab Tech 1' });
     moToken = signToken({ id: 'mo-1', role: ROLES.MEDICAL_OFFICER, name: 'Dr. Sharma' });
@@ -492,6 +502,132 @@ describe('Rakt-Connect API Gateway', () => {
         .send({ vaultPackage: vaultPkg });
       expect(moDec.statusCode).toEqual(200);
       expect(moDec.body.decryptedData).toEqual(payload);
+    });
+
+    it('POST /crypto/vault/decrypt - should reject requests attempting to supply client privateKeyHex', async () => {
+      const res = await request(app)
+        .post('/crypto/vault/decrypt')
+        .set('Authorization', `Bearer ${moToken}`)
+        .send({
+          vaultPackage: { keyId: 'dummy', ciphertext: '00' },
+          privateKeyHex: 'deadbeef'
+        });
+      expect(res.statusCode).toEqual(400);
+      expect(res.body.code).toEqual('PRIVATE_KEY_PARAM_FORBIDDEN');
+    });
+
+    it('PQCKeyStore - should encrypt private keys at rest with AES-256-GCM and never store plaintext privateKeyHex on disk', () => {
+      const fs = require('node:fs');
+      const path = require('node:path');
+      const storePath = path.resolve(__dirname, '..', 'data', 'keystore', 'pqc_vault.json');
+      expect(fs.existsSync(storePath)).toBe(true);
+
+      const content = fs.readFileSync(storePath, 'utf8');
+      expect(content).not.toContain('"privateKeyHex"');
+      expect(content).toContain('"version": "2.0-ENCRYPTED"');
+      expect(content).toContain('"encryptedPrivateKeyHex"');
+      expect(content).toContain('"ivHex"');
+      expect(content).toContain('"authTagHex"');
+    });
+
+    it('PQCKeyStore - should decrypt data encrypted under older keys after rotation (rotation recovery)', async () => {
+      // 1. Encrypt under current key
+      const initialPayload = 'Confidential_Donor_History_Under_Key_1';
+      const enc1 = await request(app)
+        .post('/crypto/vault/encrypt')
+        .send({ data: initialPayload });
+      const vaultPkg1 = enc1.body.vaultPackage;
+      const initialKeyId = vaultPkg1.keyId;
+
+      // 2. Rotate key
+      const rotRes = await request(app)
+        .post('/crypto/vault/generate-keys')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(rotRes.statusCode).toEqual(200);
+      const newKeyId = rotRes.body.keyId;
+      expect(newKeyId).not.toEqual(initialKeyId);
+
+      // 3. Encrypt new payload under new active key
+      const newPayload = 'Confidential_Donor_History_Under_Key_2';
+      const enc2 = await request(app)
+        .post('/crypto/vault/encrypt')
+        .send({ data: newPayload });
+      const vaultPkg2 = enc2.body.vaultPackage;
+      expect(vaultPkg2.keyId).toEqual(newKeyId);
+
+      // 4. Decrypt both using authorized Medical Officer token
+      const dec1 = await request(app)
+        .post('/crypto/vault/decrypt')
+        .set('Authorization', `Bearer ${moToken}`)
+        .send({ vaultPackage: vaultPkg1 });
+      expect(dec1.statusCode).toEqual(200);
+      expect(dec1.body.decryptedData).toEqual(initialPayload);
+
+      const dec2 = await request(app)
+        .post('/crypto/vault/decrypt')
+        .set('Authorization', `Bearer ${moToken}`)
+        .send({ vaultPackage: vaultPkg2 });
+      expect(dec2.statusCode).toEqual(200);
+      expect(dec2.body.decryptedData).toEqual(newPayload);
+    });
+
+    it('PQCKeyStore - should fail closed when keystore data or authentication tag is corrupted', () => {
+      const fs = require('node:fs');
+      const path = require('node:path');
+      const PQCKeyStore = require('../src/crypto/keyStore').PQCKeyStore;
+      const tempPath = path.resolve(__dirname, '..', 'data', 'keystore', 'corrupt_test_vault.json');
+
+      const corruptData = {
+        version: '2.0-ENCRYPTED',
+        activeKeyId: 'pqc-corrupt-001',
+        keys: {
+          'pqc-corrupt-001': {
+            keyId: 'pqc-corrupt-001',
+            algorithm: 'ML-KEM-768 (NIST FIPS 203)',
+            publicKeyHex: '00',
+            encryptedPrivateKeyHex: 'deadbeef1234',
+            ivHex: '00112233445566778899aabb',
+            authTagHex: '00112233445566778899aabbccddeeff'
+          }
+        }
+      };
+      fs.writeFileSync(tempPath, JSON.stringify(corruptData), 'utf8');
+
+      try {
+        const corruptStore = new PQCKeyStore(tempPath);
+        expect(() => corruptStore.init()).toThrow(/FATAL: Failed to decrypt private key/);
+      } finally {
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+      }
+    });
+
+    it('EntityStore - should preserve unit and donor records across simulated restart', () => {
+      const EntityStore = require('../src/utils/entityStore').EntityStore;
+      const path = require('node:path');
+      const fs = require('node:fs');
+      const testStorageDir = path.resolve(__dirname, '..', 'data', 'storage_test_recovery');
+
+      const store1 = new EntityStore(testStorageDir);
+      const unitsMap = new Map();
+      unitsMap.set('UNIT-REC-999', { id: 'UNIT-REC-999', bloodGroup: 'O+', state: 'COLLECTED', volumeMl: 450 });
+      store1.saveMap('units', unitsMap);
+
+      const donorsMap = new Map();
+      donorsMap.set('did:rakt:persisted1', { did: 'did:rakt:persisted1', name: 'Persisted Donor', raktTokens: 500 });
+      store1.saveMap('donors', donorsMap);
+
+      // Simulate reboot: create fresh instance and load
+      const store2 = new EntityStore(testStorageDir);
+      const recoveredUnits = store2.loadMap('units');
+      const recoveredDonors = store2.loadMap('donors');
+
+      expect(recoveredUnits.has('UNIT-REC-999')).toBe(true);
+      expect(recoveredUnits.get('UNIT-REC-999').bloodGroup).toEqual('O+');
+      expect(recoveredDonors.has('did:rakt:persisted1')).toBe(true);
+      expect(recoveredDonors.get('did:rakt:persisted1').raktTokens).toEqual(500);
+
+      // Clean up test directory
+      fs.rmSync(testStorageDir, { recursive: true, force: true });
     });
 
     it('H3Router - should compute genuine Uber H3 hex indices, calculate great circle distance and rank facilities', () => {

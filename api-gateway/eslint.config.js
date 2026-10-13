@@ -1,7 +1,15 @@
 module.exports = [
   {
+    ignores: [
+      "src/crypto/mlkem_cjs.js",
+      "data/**",
+      "wallet/**",
+      "logs/**"
+    ]
+  },
+  {
     languageOptions: {
-      ecmaVersion: 2021,
+      ecmaVersion: "latest",
       sourceType: "commonjs",
       globals: {
         require: "readonly",
@@ -14,7 +22,7 @@ module.exports = [
       }
     },
     rules: {
-      "no-unused-vars": "warn"
+      "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "caughtErrorsIgnorePattern": "^_" }]
     }
   }
 ];

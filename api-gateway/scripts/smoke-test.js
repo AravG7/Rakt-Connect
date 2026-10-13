@@ -61,7 +61,7 @@ async function runSmokeTest() {
     NODE_ENV: process.env.NODE_ENV || 'test',
     JWT_SECRET: process.env.JWT_SECRET || 'smoke-test-jwt-secret-32-chars-long-entropy',
     ADMIN_SERVICE_KEY: process.env.ADMIN_SERVICE_KEY || 'smoke-test-admin-key-32-chars-long-entropy',
-    REQUIRE_FABRIC: 'false'
+    REQUIRE_FABRIC: process.env.REQUIRE_FABRIC !== undefined ? process.env.REQUIRE_FABRIC : 'false'
   };
 
   const serverProcess = spawn('node', [path.resolve(__dirname, '..', 'server.js')], {
@@ -76,7 +76,12 @@ async function runSmokeTest() {
   try {
     const health = await probeHealth(PORT);
     console.log('[SMOKE TEST] /health responded successfully:', JSON.stringify(health, null, 2));
-    console.log('[PASS] API Gateway deployment smoke test PASSED successfully.');
+    console.log('[PASS] API Gateway deployment smoke test PASSED successfully (API operational readiness confirmed).');
+    if (serverEnv.REQUIRE_FABRIC === 'false') {
+      console.log('[NOTICE] REQUIRE_FABRIC is false: This smoke test validates API gateway process health and internal services, not a live Fabric peer deployment.');
+    } else {
+      console.log('[PASS] REQUIRE_FABRIC is true: Fabric peer connectivity and channel readiness verified.');
+    }
     serverProcess.kill('SIGTERM');
     process.exit(0);
   } catch (err) {

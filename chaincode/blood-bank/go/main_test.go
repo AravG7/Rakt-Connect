@@ -6,9 +6,11 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"math/big"
 	"testing"
 	"time"
 
@@ -65,15 +67,40 @@ func (mc *MockContext) GetClientIdentity() cid.ClientIdentity {
 	return mc.clientIdentity
 }
 
+func createTestCertificate(t *testing.T, commonName string) (*x509.Certificate, *ecdsa.PrivateKey) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			CommonName:   commonName,
+			Organization: []string{"HospitalOrg"},
+		},
+		NotBefore: time.Now().Add(-1 * time.Hour),
+		NotAfter:  time.Now().Add(24 * time.Hour),
+	}
+
+	certBytes, err := x509.CreateCertificate(rand.Reader, template, template, &priv.PublicKey, priv)
+	require.NoError(t, err)
+
+	cert, err := x509.ParseCertificate(certBytes)
+	require.NoError(t, err)
+
+	return cert, priv
+}
+
 func setupTestContext(t *testing.T) (*SmartContract, *MockContext, *shimtest.MockStub) {
 	contract := new(SmartContract)
 	cc, err := contractapi.NewChaincode(contract)
 	require.NoError(t, err)
 
+	testCert, _ := createTestCertificate(t, "DrAdmin")
+
 	stub := shimtest.NewMockStub("test_stub", cc)
 	ctx := &MockContext{
 		stub:           stub,
-		clientIdentity: &MockClientIdentity{mspID: "HospitalMSP", id: "x509::CN=DrAdmin,OU=Hospital::CN=HospitalCA"},
+		clientIdentity: &MockClientIdentity{mspID: "HospitalMSP", id: "x509::CN=DrAdmin,OU=Hospital::CN=HospitalCA", cert: testCert},
 	}
 	return contract, ctx, stub
 }
@@ -104,7 +131,7 @@ func createTestLabSubmission(t *testing.T, stub *shimtest.MockStub, unitId strin
 		_ = stub.PutState("PRACTITIONER_KEY_"+labTechId, []byte(pubPEM))
 	}
 	ts := time.Now().UTC().Format(time.RFC3339)
-	payload := buildCanonicalLabPayload(unitId, labTechId, "NABL-MED-1234", results.HIV, results.HBsAg, results.HCV, results.Malaria, results.Syphilis, results.Hb, ts)
+	payload := buildCanonicalLabPayload(unitId, labTechId, "NABL-MED-1234", results.HIV, results.HBsAg, results.HCV, results.Malaria, results.Syphilis, results.Hb, results.Platelets, ts)
 	sigHex := signPayload(t, privKey, payload)
 
 	submission := VerifiedLabSubmission{
@@ -127,12 +154,14 @@ func createTestMOAuth(t *testing.T, stub *shimtest.MockStub, unitId string) stri
 		_ = stub.PutState("PRACTITIONER_KEY_"+doctorId, []byte(pubPEM))
 	}
 	ts := time.Now().UTC().Format(time.RFC3339)
-	payload := buildCanonicalMOAuthPayload(unitId, doctorId, "MCI-88219", ts)
+	payload := buildCanonicalMOAuthPayload(unitId, doctorId, "MCI-88219", "HFR-KA-SRC", "HFR-KA-DST", ts)
 	sigHex := signPayload(t, privKey, payload)
 
 	auth := MOAuthorization{
 		DoctorID:         doctorId,
 		CouncilRegNo:     "MCI-88219",
+		SourceHFR:        "HFR-KA-SRC",
+		DestHFR:          "HFR-KA-DST",
 		DigitalSignature: sigHex,
 		PublicKeyPEM:     pubPEM,
 		Timestamp:        ts,
@@ -148,12 +177,13 @@ func createTestDisasterSig(t *testing.T, stub *shimtest.MockStub, disasterId, ra
 		_ = stub.PutState("PRACTITIONER_KEY_"+adminId, []byte(pubPEM))
 	}
 	ts := time.Now().UTC().Format(time.RFC3339)
-	payload := buildCanonicalDisasterPayload(disasterId, adminId, role, radius, ts)
+	payload := buildCanonicalDisasterPayload(disasterId, adminId, role, radius, "LEVEL_2", ts)
 	sigHex := signPayload(t, privKey, payload)
 
 	sig := AdminSignature{
 		AdminID:       adminId,
 		Role:          role,
+		Severity:      "LEVEL_2",
 		SignatureHash: sigHex,
 		PublicKeyPEM:  pubPEM,
 		Timestamp:     ts,
@@ -170,10 +200,12 @@ func createTestReconAuth(t *testing.T, stub *shimtest.MockStub, unitId string) s
 		_ = stub.PutState("PRACTITIONER_KEY_"+doctorId, []byte(pubPEM))
 	}
 	ts := time.Now().UTC().Format(time.RFC3339)
-	payload := buildCanonicalReconPayload(unitId, doctorId, "MCI-77312", "Emergency transfusion verified post-event", ts)
+	payload := buildCanonicalReconPayload("DISASTER-01", 1, unitId, doctorId, "MCI-77312", "Emergency transfusion verified post-event", ts)
 	sigHex := signPayload(t, privKey, payload)
 
 	auth := ReconciliationAuth{
+		EventID:          "DISASTER-01",
+		UnitCount:        1,
 		DoctorID:         doctorId,
 		CouncilRegNo:     "MCI-77312",
 		DigitalSignature: sigHex,
@@ -471,7 +503,7 @@ func TestCryptographicSignatureVerification(t *testing.T) {
 
 	// Sign canonical payload
 	ts := time.Now().UTC().Format(time.RFC3339)
-	canonicalPayload := buildCanonicalLabPayload(unitId, labTechId, "NABL-MED-9901", "NEGATIVE", "NEGATIVE", "NEGATIVE", "NEGATIVE", "NEGATIVE", "14.2", ts)
+	canonicalPayload := buildCanonicalLabPayload(unitId, labTechId, "NABL-MED-9901", "NEGATIVE", "NEGATIVE", "NEGATIVE", "NEGATIVE", "NEGATIVE", "14.2", "", ts)
 	hash := sha256.Sum256(canonicalPayload)
 	sigBytes, err := ecdsa.SignASN1(rand.Reader, privKey, hash[:])
 	require.NoError(t, err)
@@ -523,7 +555,7 @@ func TestCryptographicSignatureVerification(t *testing.T) {
 	require.NoError(t, err)
 
 	rogueKey, roguePEM := createTestSigningKey(t)
-	roguePayload := buildCanonicalLabPayload(unitId3, "ROGUE-TECH-99", "NABL-MED-9901", "NEGATIVE", "NEGATIVE", "NEGATIVE", "NEGATIVE", "NEGATIVE", "14.2", ts)
+	roguePayload := buildCanonicalLabPayload(unitId3, "ROGUE-TECH-99", "NABL-MED-9901", "NEGATIVE", "NEGATIVE", "NEGATIVE", "NEGATIVE", "NEGATIVE", "14.2", "", ts)
 	rogueSig := signPayload(t, rogueKey, roguePayload)
 	rogueSubmission := VerifiedLabSubmission{
 		LabTechID:        "ROGUE-TECH-99",
@@ -650,6 +682,26 @@ func TestFailClosedSecurityControls(t *testing.T) {
 	var lowHbUnit BloodUnit
 	_ = json.Unmarshal(stateBytes, &lowHbUnit)
 	require.Equal(t, "PermanentlyRejected", lowHbUnit.State)
+
+	// 14. Generate80GReceipt enforces caller MSP authorization
+	_, err = contract.Generate80GReceipt(rogueCtx, "DONOR-001", "UNIT-FC-1")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "is not authorized")
+
+	// 15. RegisterPractitionerKey enforces immutability (cannot overwrite existing key)
+	testPractitionerId := "DOC-IMMUTABLE-01"
+	err = contract.RegisterPractitionerKey(ctx, testPractitionerId, pubPEM)
+	require.NoError(t, err)
+	err = contract.RegisterPractitionerKey(ctx, testPractitionerId, pubPEM)
+	require.Error(t, err, "Overwriting existing practitioner key must fail")
+	require.Contains(t, err.Error(), "cannot be overwritten")
+
+	// 16. verifySignerTrust rejects untrusted certificate that does not match transaction identity
+	selfSignedCertBytes := []byte("FORGED_CERTIFICATE_BYTES")
+	fakeCertPEM := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: selfSignedCertBytes}))
+	err = verifySignerTrust(ctx, "DrAdmin", fakeCertPEM)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "does not match verified Fabric transaction caller certificate")
 
 	_ = privKey
 }
