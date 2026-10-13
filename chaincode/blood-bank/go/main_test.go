@@ -1,7 +1,15 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
+	"fmt"
 	"testing"
 	"time"
 
@@ -254,3 +262,72 @@ func TestColdChainExcursions(t *testing.T) {
 	_ = json.Unmarshal(stateBytes, &unit)
 	require.Equal(t, "Spoiled", unit.State, "Platelets stored at 4°C must be marked Spoiled")
 }
+
+func TestCryptographicSignatureVerification(t *testing.T) {
+	contract, ctx, stub := setupTestContext(t)
+	stub.MockTransactionStart("tx_crypto_1")
+	defer stub.MockTransactionEnd("tx_crypto_1")
+
+	// 1. Generate real ECDSA P-256 key pair for Lab Technician
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	pubBytes, err := x509.MarshalPKIXPublicKey(&privKey.PublicKey)
+	require.NoError(t, err)
+	pubPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubBytes}))
+
+	// Collect a unit
+	unitId := "UNIT-ECDSA-01"
+	collectionTime := time.Now().UTC().Format(time.RFC3339)
+	err = contract.CollectUnit(ctx, unitId, "DONOR-999", "O+", "WholeBlood", 450, collectionTime, "BATCH-CRYPTO")
+	require.NoError(t, err)
+
+	// Sign payload: "labTechId:unitId:HIV_result"
+	labTechId := "LAB-TECH-77"
+	payload := []byte(fmt.Sprintf("%s:%s:NEGATIVE", labTechId, unitId))
+	hash := sha256.Sum256(payload)
+	sigBytes, err := ecdsa.SignASN1(rand.Reader, privKey, hash[:])
+	require.NoError(t, err)
+	validSigHex := hex.EncodeToString(sigBytes)
+
+	// 2. Submit test result with valid cryptographic ECDSA signature and public key
+	submission := VerifiedLabSubmission{
+		LabTechID:        labTechId,
+		LabLicenseNo:     "NABL-MED-9901",
+		DigitalSignature: validSigHex,
+		PublicKeyPEM:     pubPEM,
+		TestTimestamp:    time.Now().UTC().Format(time.RFC3339),
+		TestResults: TestResults{
+			HIV:      "NEGATIVE",
+			HBsAg:    "NEGATIVE",
+			HCV:      "NEGATIVE",
+			Malaria:  "NEGATIVE",
+			Syphilis: "NEGATIVE",
+			Hb:       "14.2",
+		},
+	}
+	subJSON, _ := json.Marshal(submission)
+
+	err = contract.SubmitTestResult(ctx, unitId, string(subJSON))
+	require.NoError(t, err, "Valid ECDSA cryptographic signature must be accepted")
+
+	// Verify ledger state
+	stateBytes, _ := stub.GetState("UNIT_" + unitId)
+	var unit BloodUnit
+	_ = json.Unmarshal(stateBytes, &unit)
+	require.Equal(t, "Approved", unit.State)
+
+	// 3. Test tampered signature - MUST BE REJECTED
+	unitId2 := "UNIT-ECDSA-02"
+	err = contract.CollectUnit(ctx, unitId2, "DONOR-999", "O+", "WholeBlood", 450, collectionTime, "BATCH-CRYPTO")
+	require.NoError(t, err)
+
+	tamperedSigHex := validSigHex[:len(validSigHex)-4] + "ffff"
+	submission.DigitalSignature = tamperedSigHex
+	subJSON, _ = json.Marshal(submission)
+
+	err = contract.SubmitTestResult(ctx, unitId2, string(subJSON))
+	require.Error(t, err, "Tampered cryptographic signature must be rejected")
+	require.Contains(t, err.Error(), "cryptographic signature verification failed")
+}
+

@@ -1,84 +1,60 @@
 /**
  * H3 Hexagonal Spatial Indexing & Routing Engine
  * Decentralized emergency blood dispatch for Rakt-Connect
+ * Powered by Uber H3 Spatial Indexing Library (h3-js)
  */
 
-const crypto = require('crypto');
+const h3 = require('h3-js');
 
 class H3Router {
   /**
-   * Approximate conversion of GPS coordinates to an H3-compatible 64-bit Hex Index
+   * Converts GPS coordinates to an official 64-bit Uber H3 Hex Index
    * Resolution 7 (~5.16 km² cell) / Resolution 8 (~0.74 km² cell)
    */
   static geoToH3Index(lat, lon, res = 7) {
     if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
       throw new Error(`Invalid GPS coordinates: lat=${lat}, lon=${lon}`);
     }
-
-    // Discretize lat/lon into hexagonal grid cells
-    const latGrid = Math.floor((lat + 90) * (1 << res));
-    const lonGrid = Math.floor((lon + 180) * (1 << res));
-
-    // Derive deterministic 15-character H3 cell representation
-    const baseHash = crypto.createHash('sha256')
-      .update(`${res}:${latGrid}:${lonGrid}`)
-      .digest('hex');
-
-    const h3Index = `8${res.toString(16)}${baseHash.substring(0, 13)}`;
-    return h3Index;
+    return h3.latLngToCell(lat, lon, res);
   }
 
   /**
    * Calculates great-circle Haversine distance in kilometers between two GPS points
    */
   static haversineKm(lat1, lon1, lat2, lon2) {
-    const R = 6371; // Earth radius in km
-    const dLat = (lat2 - lat1) * (Math.PI / 180);
-    const dLon = (lon2 - lon1) * (Math.PI / 180);
-
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * (Math.PI / 180)) *
-        Math.cos(lat2 * (Math.PI / 180)) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
-
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return +(R * c).toFixed(2);
+    const dist = h3.greatCircleDistance([lat1, lon1], [lat2, lon2], 'km');
+    return +dist.toFixed(2);
   }
 
   /**
-   * Generates k-ring hexagonal neighbors around an origin H3 cell
-   * (Ring 1 = 6 adjacent hexes, Ring 2 = 12 hexes, up to k rings)
+   * Generates k-ring hexagonal neighbors around an origin H3 cell using official h3.gridDisk
+   * (Ring 1 = 7 hexes [center + 6 neighbors], Ring 2 = 19 hexes, etc.)
    */
   static kRing(originLat, originLon, k = 1, res = 7) {
-    const neighbors = [];
     const originH3 = this.geoToH3Index(originLat, originLon, res);
-    neighbors.push(originH3);
+    return h3.gridDisk(originH3, k);
+  }
 
-    // Angular delta offsets for hexagonal grid vertices
-    const stepKm = res === 7 ? 2.5 : 1.0;
-    const kmPerDegreeLat = 111.0;
-    const kmPerDegreeLon = 111.0 * Math.cos(originLat * (Math.PI / 180));
-
-    for (let ring = 1; ring <= k; ring++) {
-      const radiusKm = ring * stepKm;
-      for (let angleDeg = 0; angleDeg < 360; angleDeg += 60) {
-        const rad = angleDeg * (Math.PI / 180);
-        const dLat = (radiusKm * Math.cos(rad)) / kmPerDegreeLat;
-        const dLon = (radiusKm * Math.sin(rad)) / kmPerDegreeLon;
-
-        const neighborLat = originLat + dLat;
-        const neighborLon = originLon + dLon;
-        const hex = this.geoToH3Index(neighborLat, neighborLon, res);
-
-        if (!neighbors.includes(hex)) {
-          neighbors.push(hex);
-        }
-      }
+  /**
+   * Checks if two hex cells are immediate neighbors sharing a hexagonal edge
+   */
+  static areNeighbors(hexA, hexB) {
+    try {
+      return h3.areNeighborCells(hexA, hexB);
+    } catch (_) {
+      return false;
     }
+  }
 
-    return neighbors;
+  /**
+   * Computes hexagonal grid distance between two H3 cells
+   */
+  static gridDistance(hexA, hexB) {
+    try {
+      return h3.gridDistance(hexA, hexB);
+    } catch (_) {
+      return -1;
+    }
   }
 
   /**
@@ -138,8 +114,10 @@ class H3Router {
 
     return {
       originH3,
-      searchRadiusKm: Math.max(...scored.map(s => s.distanceKm), 10),
+      requestLocation,
       urgency,
+      urgencyWeight,
+      candidatesEvaluated: candidates.length,
       candidates: scored
     };
   }

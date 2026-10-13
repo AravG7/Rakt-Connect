@@ -12,13 +12,14 @@
   "dependencies": {
     "@grpc/grpc-js": "^1.14.3",
     "@hyperledger/fabric-gateway": "^1.10.1",
+    "@noble/post-quantum": "^0.7.1",
     "body-parser": "^2.2.2",
     "cors": "^2.8.5",
     "express": "^5.2.1",
     "express-rate-limit": "^8.3.2",
-    "fabric-ca-client": "^2.2.20",
+    "h3-js": "^4.5.0",
     "node-fetch": "^2.7.0",
-    "uuid": "^9.0.1",
+    "uuid": "^11.1.1",
     "winston": "^3.11.0"
   },
   "devDependencies": {

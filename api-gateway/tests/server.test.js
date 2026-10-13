@@ -1,6 +1,6 @@
 const request = require('supertest');
 const app = require('../server');
-const { signToken, ROLES } = require('../src/middleware/auth');
+const { signToken, ROLES, ADMIN_SERVICE_KEY } = require('../src/middleware/auth');
 const PQCVault = require('../src/crypto/pqcVault');
 const H3Router = require('../src/routing/h3Router');
 const FHIRMapper = require('../src/fhir/mapper');
@@ -24,24 +24,75 @@ describe('Rakt-Connect API Gateway', () => {
   });
 
   // 1. Health check
-  it('GET /health - should return operational status and accurately describe Fabric v2.5 LTS', async () => {
+  it('GET /health - should return operational status and accurately describe Fabric v2.5 LTS and standard libraries', async () => {
     const res = await request(app).get('/health');
     expect(res.statusCode).toEqual(200);
     expect(res.body).toHaveProperty('status', 'operational');
     expect(res.body.blockchain).toContain('Fabric v2.5 LTS');
-    expect(res.body).toHaveProperty('pqcVault');
-    expect(res.body).toHaveProperty('spatialRouting');
+    expect(res.body.pqcVault).toContain('NIST FIPS 203 ML-KEM-768');
+    expect(res.body.spatialRouting).toContain('Uber H3 Hexagonal Spatial Indexing via h3-js');
+    expect(res.body).toHaveProperty('fabricGateway');
   });
 
   // 2. Authentication & Authorization Controls
   describe('Authentication and Authorization Controls', () => {
-    it('POST /auth/token - should generate a valid JWT token', async () => {
+    it('POST /auth/token - should reject unauthenticated privileged role issuance', async () => {
       const res = await request(app)
         .post('/auth/token')
+        .send({ userId: 'hacker-01', role: ROLES.HOSPITAL_ADMIN });
+      expect(res.statusCode).toEqual(403);
+      expect(res.body.code).toEqual('PRIVILEGED_ROLE_AUTH_REQUIRED');
+    });
+
+    it('POST /auth/token - should generate a valid JWT token when authenticated by admin key', async () => {
+      const res = await request(app)
+        .post('/auth/token')
+        .set('x-admin-key', ADMIN_SERVICE_KEY)
         .send({ userId: 'user-001', role: ROLES.LAB_TECH });
       expect(res.statusCode).toEqual(200);
       expect(res.body).toHaveProperty('token');
       expect(res.body.role).toEqual('LAB_TECH');
+    });
+
+    it('POST /auth/token - should allow donor token issuance for self-service app', async () => {
+      const res = await request(app)
+        .post('/auth/token')
+        .send({ userId: 'donor-user-1', role: ROLES.DONOR });
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.role).toEqual('DONOR');
+    });
+
+    it('POST /auth/abha-login & /auth/verify-otp - should enforce real OTP challenge and reject fake/replayed OTPs', async () => {
+      const testAbha = '14-9988-7766-5544';
+      // 1. Initiate login
+      const initRes = await request(app)
+        .post('/auth/abha-login')
+        .send({ abhaId: testAbha });
+      expect(initRes.statusCode).toEqual(200);
+      expect(initRes.body).toHaveProperty('otp');
+      const challengeOtp = initRes.body.otp;
+
+      // 2. Reject incorrect OTP
+      const badOtpRes = await request(app)
+        .post('/auth/verify-otp')
+        .send({ abhaId: testAbha, otp: '000000' });
+      expect(badOtpRes.statusCode).toEqual(401);
+      expect(badOtpRes.body.code).toEqual('OTP_INVALID');
+
+      // 3. Accept correct OTP
+      const verifyRes = await request(app)
+        .post('/auth/verify-otp')
+        .send({ abhaId: testAbha, otp: challengeOtp });
+      expect(verifyRes.statusCode).toEqual(200);
+      expect(verifyRes.body).toHaveProperty('token');
+      expect(verifyRes.body.role).toEqual('DONOR');
+
+      // 4. Reject replay of consumed OTP
+      const replayRes = await request(app)
+        .post('/auth/verify-otp')
+        .send({ abhaId: testAbha, otp: challengeOtp });
+      expect(replayRes.statusCode).toEqual(401);
+      expect(replayRes.body.code).toEqual('OTP_NOT_FOUND');
     });
 
     it('GET /donor/:did - should return 401 when unauthenticated', async () => {
@@ -63,6 +114,7 @@ describe('Rakt-Connect API Gateway', () => {
       expect(res.body.donor).toHaveProperty('did');
       expect(res.body.donor.bloodGroup).toEqual('O+');
       expect(res.body.donor.consentRecorded).toBe(true);
+      expect(res.body).toHaveProperty('ledgerStatus');
     });
 
     it('POST /donor/register - should fail when explicit consent is denied', async () => {
@@ -137,6 +189,7 @@ describe('Rakt-Connect API Gateway', () => {
       expect(res.body.unit).toHaveProperty('id');
       expect(res.body.unit.state).toEqual('COLLECTED');
       expect(res.body.unit.daysToExpiry).toEqual(35); // Whole blood 35 days
+      expect(res.body).toHaveProperty('ledgerStatus');
       testUnitId = res.body.unit.id;
     });
 
@@ -312,17 +365,20 @@ describe('Rakt-Connect API Gateway', () => {
     });
   });
 
-  // 5. Post-Quantum Cryptographic Vault & H3 Routing
+  // 5. Authentic Post-Quantum Cryptographic Vault & Uber H3 Routing
   describe('Cryptographic Vault & Spatial Routing Integrations', () => {
-    it('PQCVault - should encapsulate ML-KEM-768 shared secret and encrypt/decrypt with AES-256-GCM', () => {
+    it('PQCVault - should encapsulate genuine NIST FIPS 203 ML-KEM-768 shared secret and encrypt/decrypt with AES-256-GCM', () => {
       const keyPair = PQCVault.generateKeyPair();
-      expect(keyPair.publicKey.length).toEqual(1184);
+      expect(keyPair.publicKey.length).toEqual(1184); // FIPS 203 ML-KEM-768 PK size
+      expect(keyPair.privateKey.length).toEqual(2400); // FIPS 203 ML-KEM-768 SK size
 
       const secretPayload = 'PATIENT_CONFIDENTIAL_HEALTH_DATA_ABHA_RH_NULL';
       const vault = PQCVault.encryptVault(secretPayload, keyPair.publicKey, 'DPDP_SECTION_43A');
 
-      expect(vault.algorithm).toContain('ML-KEM-768');
+      expect(vault.algorithm).toContain('ML-KEM-768 (NIST FIPS 203)');
       expect(vault).toHaveProperty('ciphertext');
+      expect(vault).toHaveProperty('kemCiphertext');
+      expect(Buffer.from(vault.kemCiphertext, 'hex').length).toEqual(1088); // FIPS 203 CT size
       expect(vault).toHaveProperty('iv');
       expect(vault).toHaveProperty('tag');
 
@@ -330,11 +386,14 @@ describe('Rakt-Connect API Gateway', () => {
       expect(decrypted).toEqual(secretPayload);
     });
 
-    it('H3Router - should compute spatial hex indices, calculate Haversine distance and rank facilities', () => {
+    it('H3Router - should compute genuine Uber H3 hex indices, calculate great circle distance and rank facilities', () => {
       const originLat = 12.9116;
       const originLon = 77.6474;
       const h3Index = H3Router.geoToH3Index(originLat, originLon, 7);
       expect(h3Index).toMatch(/^87/);
+
+      const kRingNeighbors = H3Router.kRing(originLat, originLon, 1, 7);
+      expect(kRingNeighbors.length).toEqual(7); // Center + 6 hexagonal neighbors
 
       const dist = H3Router.haversineKm(12.9116, 77.6474, 12.9343, 77.6101);
       expect(dist).toBeGreaterThan(0);
@@ -355,7 +414,7 @@ describe('Rakt-Connect API Gateway', () => {
     });
   });
 
-  // 6. FHIR R4 Conformance & Validation
+  // 6. FHIR R4 Conformance & Validation (No Fabricated Fallbacks)
   describe('FHIR R4 Conformance and Profiles', () => {
     it('FHIRValidator - should flag invalid top-level bloodGroup on Patient as schema violation', () => {
       const invalidPatient = {
@@ -396,9 +455,51 @@ describe('Rakt-Connect API Gateway', () => {
       expect(productValidation.isValid).toBe(true);
       expect(fhirProduct.productCategory).toEqual('cells');
     });
+
+    it('GET /fhir/patient/:did - should return 404 for non-existent donor instead of fabricating fallback data', async () => {
+      const res = await request(app)
+        .get('/fhir/patient/did:rakt:nonexistent999')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(res.statusCode).toEqual(404);
+      expect(res.body.code).toEqual('DONOR_NOT_FOUND');
+    });
+
+    it('GET /fhir/unit/:id - should return 404 for non-existent unit instead of fabricating fallback data', async () => {
+      const res = await request(app)
+        .get('/fhir/unit/UNIT-NONEXISTENT-999')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(res.statusCode).toEqual(404);
+      expect(res.body.code).toEqual('UNIT_NOT_FOUND');
+    });
   });
 
-  // 7. Emergency Broadcast and AI routes
+  // 7. Hyperledger Fabric Ledger Integration Routes
+  describe('Hyperledger Fabric Gateway Integration', () => {
+    it('GET /fabric/status - should report channel name, peer endpoint, and mapped contracts', async () => {
+      const res = await request(app).get('/fabric/status');
+      expect(res.statusCode).toEqual(200);
+      expect(res.body.channel).toEqual('rakt-channel');
+      expect(res.body.peerEndpoint).toEqual('localhost:7051');
+      expect(res.body.mappedContracts).toContain('donorEligibility');
+      expect(res.body.mappedContracts).toContain('lifecycle');
+    });
+
+    it('POST /fabric/commit-transaction - should accept transaction submission via gateway', async () => {
+      const res = await request(app)
+        .post('/fabric/commit-transaction')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          contract: 'donorEligibility',
+          functionName: 'CheckEligibility',
+          args: ['did:rakt:donor1', '2026-10-13T12:00:00Z']
+        });
+      expect(res.statusCode).toEqual(200);
+      expect(res.body).toHaveProperty('txId');
+      expect(res.body).toHaveProperty('blockStatus');
+    });
+  });
+
+  // 8. Emergency Broadcast and AI routes
   describe('Emergency Broadcast & AI Proxy', () => {
     it('POST /broadcast/emergency - should activate EBM and return broadcast ID', async () => {
       const res = await request(app)

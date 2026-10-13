@@ -1,9 +1,17 @@
 /**
  * Post-Quantum Cryptographic Vault (NIST FIPS 203 ML-KEM-768 + AES-256-GCM)
  * Sovereign National Health Record Encrypter for Rakt-Connect
+ * Built with standard NIST FIPS 203 ML-KEM-768 via @noble/post-quantum
  */
 
 const crypto = require('crypto');
+
+let ml_kem768;
+try {
+  ml_kem768 = require('./mlkem_cjs.js').ml_kem768;
+} catch (_) {
+  ml_kem768 = require('@noble/post-quantum/ml-kem.js').ml_kem768;
+}
 
 // NIST FIPS 203 (ML-KEM-768) Specification Constants
 const ML_KEM_768_PUBLIC_KEY_BYTES = 1184;
@@ -16,95 +24,79 @@ const DEFAULT_HKDF_SALT = 'RaktConnect_PQC_System_Salt_Verification_V1';
 
 class PQCVault {
   /**
-   * Generates a deterministic or pseudorandom ML-KEM-768 Key Pair.
-   * Validates structural bounds according to NIST FIPS 203.
+   * Generates a genuine NIST FIPS 203 ML-KEM-768 Key Pair.
+   * Uses @noble/post-quantum Module-LWE lattice cryptography.
+   * @param {Buffer|Uint8Array} [seed] - Optional 64-byte seed for deterministic generation
    */
   static generateKeyPair(seed = null) {
-    const entropy = seed ? crypto.createHash('sha256').update(seed).digest() : crypto.randomBytes(64);
-    
-    // Derive 1184-byte public key vector and 2400-byte private key vector
-    const pkBuffer = Buffer.alloc(ML_KEM_768_PUBLIC_KEY_BYTES);
-    const skBuffer = Buffer.alloc(ML_KEM_768_PRIVATE_KEY_BYTES);
-
-    // Populate with lattice seed expansion
-    const expanded = crypto.createHash('sha512').update(entropy).digest();
-    expanded.copy(pkBuffer, 0, 0, Math.min(expanded.length, ML_KEM_768_PUBLIC_KEY_BYTES));
-    
-    // Fill remaining bytes deterministically
-    for (let i = expanded.length; i < ML_KEM_768_PUBLIC_KEY_BYTES; i += 32) {
-      const chunk = crypto.createHash('sha256').update(entropy).update(Buffer.from([i & 0xff])).digest();
-      chunk.copy(pkBuffer, i, 0, Math.min(32, ML_KEM_768_PUBLIC_KEY_BYTES - i));
+    let keyPair;
+    if (seed) {
+      const seedBuf = Buffer.isBuffer(seed) ? seed : Buffer.from(seed);
+      // FIPS 203 keygen seed requires 64 bytes (d || z)
+      let seed64;
+      if (seedBuf.length === 64) {
+        seed64 = seedBuf;
+      } else {
+        const hash1 = crypto.createHash('sha256').update(seedBuf).digest();
+        const hash2 = crypto.createHash('sha256').update(hash1).digest();
+        seed64 = Buffer.concat([hash1, hash2]);
+      }
+      keyPair = ml_kem768.keygen(new Uint8Array(seed64));
+    } else {
+      keyPair = ml_kem768.keygen();
     }
 
-    pkBuffer.copy(skBuffer, 0, 0, ML_KEM_768_PUBLIC_KEY_BYTES);
-    entropy.copy(skBuffer, ML_KEM_768_PUBLIC_KEY_BYTES, 0, Math.min(entropy.length, ML_KEM_768_PRIVATE_KEY_BYTES - ML_KEM_768_PUBLIC_KEY_BYTES));
+    const pkBuffer = Buffer.from(keyPair.publicKey);
+    const skBuffer = Buffer.from(keyPair.secretKey);
 
     return {
       publicKey: pkBuffer,
       privateKey: skBuffer,
       algorithm: 'ML-KEM-768 (NIST FIPS 203)',
-      publicKeyBytes: ML_KEM_768_PUBLIC_KEY_BYTES
+      publicKeyBytes: ML_KEM_768_PUBLIC_KEY_BYTES,
+      privateKeyBytes: ML_KEM_768_PRIVATE_KEY_BYTES
     };
   }
 
   /**
-   * ML-KEM-768 Key Encapsulation Mechanism:
+   * Genuine NIST FIPS 203 ML-KEM-768 Key Encapsulation Mechanism:
    * Encapsulates a 32-byte shared secret against the recipient's 1184-byte public key.
+   * Produces a 1088-byte ciphertext and a 32-byte shared secret.
+   * @param {Buffer|Uint8Array} publicKeyBuffer
    */
   static encapsulate(publicKeyBuffer) {
-    if (!Buffer.isBuffer(publicKeyBuffer) || publicKeyBuffer.length !== ML_KEM_768_PUBLIC_KEY_BYTES) {
+    if (!publicKeyBuffer || publicKeyBuffer.length !== ML_KEM_768_PUBLIC_KEY_BYTES) {
       throw new Error(`Invalid ML-KEM public key: expected exactly ${ML_KEM_768_PUBLIC_KEY_BYTES} bytes, got ${publicKeyBuffer ? publicKeyBuffer.length : 0}`);
     }
 
-    // Generate random ephemeral seed
-    const ephemeralSeed = crypto.randomBytes(32);
-    
-    // Derive 32-byte shared secret via SHA3/SHA-256 lattice projection
-    const sharedSecret = crypto.createHash('sha256')
-      .update(ephemeralSeed)
-      .update(publicKeyBuffer.subarray(0, 64))
-      .digest();
-
-    // Construct 1088-byte KEM ciphertext vector
-    const kemCiphertext = Buffer.alloc(ML_KEM_768_CIPHERTEXT_BYTES);
-    ephemeralSeed.copy(kemCiphertext, 0, 0, 32);
-
-    for (let i = 32; i < ML_KEM_768_CIPHERTEXT_BYTES; i += 32) {
-      const chunk = crypto.createHash('sha256')
-        .update(ephemeralSeed)
-        .update(publicKeyBuffer.subarray((i % 1000), (i % 1000) + 32))
-        .update(Buffer.from([i & 0xff]))
-        .digest();
-      chunk.copy(kemCiphertext, i, 0, Math.min(32, ML_KEM_768_CIPHERTEXT_BYTES - i));
-    }
+    const pkUint8 = new Uint8Array(publicKeyBuffer);
+    const { cipherText, sharedSecret } = ml_kem768.encapsulate(pkUint8);
 
     return {
-      kemCiphertext,
-      sharedSecret
+      kemCiphertext: Buffer.from(cipherText),
+      sharedSecret: Buffer.from(sharedSecret)
     };
   }
 
   /**
-   * ML-KEM-768 Decapsulation Mechanism:
-   * Decapsulates the shared secret using the recipient's private key.
+   * Genuine NIST FIPS 203 ML-KEM-768 Decapsulation Mechanism:
+   * Decapsulates the shared secret using the recipient's 2400-byte private key.
+   * @param {Buffer|Uint8Array} kemCiphertextBuffer
+   * @param {Buffer|Uint8Array} privateKeyBuffer
    */
   static decapsulate(kemCiphertextBuffer, privateKeyBuffer) {
-    if (!Buffer.isBuffer(kemCiphertextBuffer) || kemCiphertextBuffer.length !== ML_KEM_768_CIPHERTEXT_BYTES) {
-      throw new Error(`Invalid ML-KEM ciphertext: expected ${ML_KEM_768_CIPHERTEXT_BYTES} bytes`);
+    if (!kemCiphertextBuffer || kemCiphertextBuffer.length !== ML_KEM_768_CIPHERTEXT_BYTES) {
+      throw new Error(`Invalid ML-KEM ciphertext: expected exactly ${ML_KEM_768_CIPHERTEXT_BYTES} bytes, got ${kemCiphertextBuffer ? kemCiphertextBuffer.length : 0}`);
     }
-    if (!Buffer.isBuffer(privateKeyBuffer) || privateKeyBuffer.length < ML_KEM_768_PUBLIC_KEY_BYTES) {
-      throw new Error('Invalid ML-KEM private key');
+    if (!privateKeyBuffer || privateKeyBuffer.length !== ML_KEM_768_PRIVATE_KEY_BYTES) {
+      throw new Error(`Invalid ML-KEM private key: expected exactly ${ML_KEM_768_PRIVATE_KEY_BYTES} bytes, got ${privateKeyBuffer ? privateKeyBuffer.length : 0}`);
     }
 
-    const ephemeralSeed = kemCiphertextBuffer.subarray(0, 32);
-    const publicKeyPortion = privateKeyBuffer.subarray(0, 64);
+    const ctUint8 = new Uint8Array(kemCiphertextBuffer);
+    const skUint8 = new Uint8Array(privateKeyBuffer);
+    const sharedSecret = ml_kem768.decapsulate(ctUint8, skUint8);
 
-    const sharedSecret = crypto.createHash('sha256')
-      .update(ephemeralSeed)
-      .update(publicKeyPortion)
-      .digest();
-
-    return sharedSecret;
+    return Buffer.from(sharedSecret);
   }
 
   /**
@@ -122,8 +114,8 @@ class PQCVault {
 
   /**
    * Encrypts plaintext health record into authenticated PQC vault package:
-   * 1. Bounds checks ML-KEM public key (1184 bytes).
-   * 2. Encapsulates shared secret.
+   * 1. Validates ML-KEM public key (1184 bytes).
+   * 2. Encapsulates 32-byte shared secret via NIST FIPS 203 ML-KEM-768.
    * 3. Derives 256-bit AES key via HKDF-SHA256.
    * 4. Encrypts payload using AES-256-GCM with 12-byte IV and AAD.
    * 5. Performs secure zero-fill wipe of sensitive volatile memory.
@@ -131,7 +123,7 @@ class PQCVault {
   static encryptVault(plaintext, publicKeyBuffer, aad = 'DPDP_SECTION_43A') {
     const inputBuf = Buffer.isBuffer(plaintext) ? plaintext : Buffer.from(plaintext, 'utf8');
 
-    // 1. ML-KEM Encapsulation
+    // 1. Genuine ML-KEM Encapsulation
     const { kemCiphertext, sharedSecret } = this.encapsulate(publicKeyBuffer);
 
     // 2. Symmetric key derivation
@@ -153,7 +145,7 @@ class PQCVault {
     this.secureWipe(aesKey);
 
     return {
-      algorithm: 'ML-KEM-768 + AES-256-GCM',
+      algorithm: 'ML-KEM-768 (NIST FIPS 203) + AES-256-GCM',
       ciphertext: encryptedData.toString('hex'),
       iv: iv.toString('hex'),
       tag: authTag.toString('hex'),
@@ -165,7 +157,7 @@ class PQCVault {
 
   /**
    * Decrypts authenticated PQC vault package using recipient private key.
-   * Validates ciphertext and authentication tag.
+   * Decapsulates ML-KEM shared secret and validates AES-GCM ciphertext and authentication tag.
    */
   static decryptVault(vaultPackage, privateKeyBuffer) {
     const { ciphertext, iv, tag, kemCiphertext, aad } = vaultPackage;

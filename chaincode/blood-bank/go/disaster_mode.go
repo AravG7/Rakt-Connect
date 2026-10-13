@@ -23,6 +23,7 @@ type AdminSignature struct {
 	AdminID       string `json:"adminId"`
 	Role          string `json:"role"`
 	SignatureHash string `json:"signatureHash"`
+	PublicKeyPEM  string `json:"publicKeyPEM,omitempty"`
 	Timestamp     string `json:"timestamp"`
 }
 
@@ -36,7 +37,7 @@ var authorizedDisasterRoles = map[string]bool{
 	"DISASTER_COORDINATOR":   true,
 }
 
-// parseAndValidateAdminSig validates an individual admin signature entry
+// parseAndValidateAdminSig validates an individual admin signature entry and verifies cryptographic signature
 func parseAndValidateAdminSig(sigStr string) (*AdminSignature, error) {
 	sigStr = strings.TrimSpace(sigStr)
 	if sigStr == "" {
@@ -49,8 +50,10 @@ func parseAndValidateAdminSig(sigStr string) (*AdminSignature, error) {
 		if strings.TrimSpace(sig.Role) == "" || !authorizedDisasterRoles[sig.Role] {
 			return nil, fmt.Errorf("admin %s does not have an authorized disaster activation role (got '%s')", sig.AdminID, sig.Role)
 		}
-		if len(sig.SignatureHash) < 16 {
-			return nil, fmt.Errorf("admin %s signatureHash has insufficient cryptographic length (must be >= 16 chars)", sig.AdminID)
+		
+		sigData := []byte(fmt.Sprintf("%s:%s", sig.AdminID, sig.Role))
+		if err := verifyCryptographicSignature(sig.PublicKeyPEM, sigData, sig.SignatureHash); err != nil {
+			return nil, fmt.Errorf("cryptographic verification failed for admin %s: %w", sig.AdminID, err)
 		}
 		return &sig, nil
 	}
@@ -62,8 +65,11 @@ func parseAndValidateAdminSig(sigStr string) (*AdminSignature, error) {
 		role := strings.TrimSpace(parts[1])
 		sigHash := strings.TrimSpace(parts[2])
 
-		if adminID == "" || !authorizedDisasterRoles[role] || len(sigHash) < 16 {
-			return nil, fmt.Errorf("invalid structured admin signature '%s'; requires valid AdminID, authorized role, and sigHash >= 16 chars", sigStr)
+		if adminID == "" || !authorizedDisasterRoles[role] {
+			return nil, fmt.Errorf("invalid structured admin signature '%s'; requires valid AdminID and authorized role", sigStr)
+		}
+		if err := verifyCryptographicSignature("", nil, sigHash); err != nil {
+			return nil, fmt.Errorf("cryptographic verification failed for structured admin signature: %w", err)
 		}
 		return &AdminSignature{
 			AdminID:       adminID,
@@ -76,13 +82,18 @@ func parseAndValidateAdminSig(sigStr string) (*AdminSignature, error) {
 	return nil, fmt.Errorf("invalid admin signature format; expected JSON or 'adminId:role:signatureHash', got '%s'", sigStr)
 }
 
-// ActivateDisasterMode - verifies at least two distinct authorized signers
+// ActivateDisasterMode - verifies at least two distinct authorized signers bound to verified identities
 func (s *SmartContract) ActivateDisasterMode(ctx contractapi.TransactionContextInterface, disasterId, timestamp, affectedRadius string, adminSigs []string) error {
 	if strings.TrimSpace(disasterId) == "" {
 		return fmt.Errorf("disasterId cannot be empty")
 	}
 	if len(adminSigs) < 2 {
 		return fmt.Errorf("disaster mode requires multi-sig from minimum 2 distinct org admins; got %d", len(adminSigs))
+	}
+
+	// Verify invoker caller MSP
+	if err := verifyCallerMSP(ctx, "HospitalMSP", "HospitalOrgMSP", "BloodBankMSP", "BloodBankOrgMSP", "Org1MSP", "Org2MSP"); err != nil {
+		return err
 	}
 
 	seenAdmins := make(map[string]bool)

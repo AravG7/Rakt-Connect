@@ -18,23 +18,30 @@ type TestResults struct {
 	Hb       string `json:"Hb"`       // Hemoglobin (g/dL, minimum 12.5 for donor safety)
 }
 
-// VerifiedLabSubmission encapsulates lab technician credentials and results
+// VerifiedLabSubmission encapsulates lab technician credentials, results, and digital signature
 type VerifiedLabSubmission struct {
 	LabTechID        string      `json:"labTechId"`
 	LabLicenseNo     string      `json:"labLicenseNo"`
 	DigitalSignature string      `json:"digitalSignature"`
+	PublicKeyPEM     string      `json:"publicKeyPEM,omitempty"` // X.509 certificate or public key PEM
 	TestTimestamp    string      `json:"testTimestamp"`
 	TestResults      TestResults `json:"testResults"`
 }
 
 // SubmitTestResult - verified lab technician submits certified results.
-// Strict validation prevents arbitrary strings, unverified submissions, or silent auto-approvals.
+// Enforces caller Fabric MSP authorization, cryptographic signature validation,
+// and strict WHO/NBTC screening marker adherence.
 func (s *SmartContract) SubmitTestResult(ctx contractapi.TransactionContextInterface, unitId string, resultsJSON string) error {
 	if strings.TrimSpace(unitId) == "" {
 		return fmt.Errorf("unitId cannot be empty")
 	}
 	if strings.TrimSpace(resultsJSON) == "" {
 		return fmt.Errorf("resultsJSON cannot be empty")
+	}
+
+	// 1. Verify invoker Fabric client identity & authorized MSP
+	if err := verifyCallerMSP(ctx, "HospitalMSP", "HospitalOrgMSP", "BloodBankMSP", "BloodBankOrgMSP", "Org1MSP", "Org2MSP"); err != nil {
+		return err
 	}
 
 	data, err := ctx.GetStub().GetState("UNIT_" + unitId)
@@ -60,9 +67,16 @@ func (s *SmartContract) SubmitTestResult(ctx contractapi.TransactionContextInter
 	// Check if submitted as a VerifiedLabSubmission envelope or direct TestResults
 	if err := json.Unmarshal([]byte(resultsJSON), &labSubmission); err == nil && labSubmission.LabTechID != "" {
 		// Enforce verified lab technician credentials
-		if strings.TrimSpace(labSubmission.LabLicenseNo) == "" || len(labSubmission.DigitalSignature) < 16 {
-			return fmt.Errorf("unverified lab credentials: LabTechID, LabLicenseNo, and verified DigitalSignature (>= 16 chars) required")
+		if strings.TrimSpace(labSubmission.LabLicenseNo) == "" {
+			return fmt.Errorf("unverified lab credentials: LabLicenseNo required")
 		}
+
+		// Cryptographic signature check
+		testData := []byte(fmt.Sprintf("%s:%s:%s", labSubmission.LabTechID, unitId, labSubmission.TestResults.HIV))
+		if err := verifyCryptographicSignature(labSubmission.PublicKeyPEM, testData, labSubmission.DigitalSignature); err != nil {
+			return fmt.Errorf("cryptographic signature verification failed: %w", err)
+		}
+
 		results = labSubmission.TestResults
 	} else {
 		// Direct TestResults format: parse strictly

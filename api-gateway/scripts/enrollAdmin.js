@@ -1,17 +1,8 @@
-const FabricCAServices = require('fabric-ca-client');
 const fs = require('fs');
 const path = require('path');
 
 async function main() {
     try {
-        const ccpPath = path.resolve(__dirname, '..', '..', 'network', 'connection-hospital.json');
-        const ccp = JSON.parse(fs.readFileSync(ccpPath, 'utf8'));
-
-        const caInfo = ccp.certificateAuthorities['ca-hospital'];
-        const caTLSCACertsPath = path.resolve(__dirname, '..', '..', 'network', caInfo.tlsCACerts.path);
-        const caTLSCACerts = fs.readFileSync(caTLSCACertsPath, 'utf8');
-        const ca = new FabricCAServices(caInfo.url, { trustedRoots: caTLSCACerts, verify: false }, caInfo.caName);
-
         const walletPath = path.join(__dirname, '..', 'wallet');
         if (!fs.existsSync(walletPath)) {
             fs.mkdirSync(walletPath, { recursive: true });
@@ -19,21 +10,47 @@ async function main() {
 
         const adminIdPath = path.join(walletPath, 'admin.id');
         if (fs.existsSync(adminIdPath)) {
-            console.log('An identity for the admin user "admin" already exists in the wallet');
+            console.log('An identity for the admin user "admin" already exists in the wallet/admin.id');
             return;
         }
 
-        const enrollment = await ca.enroll({ enrollmentID: 'admin', enrollmentSecret: 'adminpw' });
+        // Load identity directly from crypto-config generated for Fabric v2.5
+        const mspDir = path.resolve(
+            __dirname,
+            '..',
+            '..',
+            'network',
+            'crypto-config',
+            'peerOrganizations',
+            'hospital.raktconnect.com',
+            'users',
+            'Admin@hospital.raktconnect.com',
+            'msp'
+        );
+
+        const signcertsDir = path.join(mspDir, 'signcerts');
+        const keystoreDir = path.join(mspDir, 'keystore');
+
+        if (!fs.existsSync(signcertsDir) || !fs.existsSync(keystoreDir)) {
+            throw new Error(`MSP credentials directory not found at ${mspDir}`);
+        }
+
+        const certFile = fs.readdirSync(signcertsDir)[0];
+        const keyFile = fs.readdirSync(keystoreDir)[0];
+
+        const cert = fs.readFileSync(path.join(signcertsDir, certFile), 'utf8');
+        const privateKey = fs.readFileSync(path.join(keystoreDir, keyFile), 'utf8');
+
         const x509Identity = {
             credentials: {
-                certificate: enrollment.certificate,
-                privateKey: enrollment.key.toBytes(),
+                certificate: cert,
+                privateKey: privateKey,
             },
             mspId: 'HospitalMSP',
             type: 'X.509',
             version: 1
         };
-        
+
         fs.writeFileSync(adminIdPath, JSON.stringify(x509Identity, null, 2));
         console.log('Successfully enrolled admin user "admin" and saved to wallet/admin.id');
 

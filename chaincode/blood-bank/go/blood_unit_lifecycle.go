@@ -37,6 +37,7 @@ type MOAuthorization struct {
 	DoctorID         string `json:"doctorId"`
 	CouncilRegNo     string `json:"councilRegNo"`
 	DigitalSignature string `json:"digitalSignature"`
+	PublicKeyPEM     string `json:"publicKeyPEM,omitempty"`
 	Timestamp        string `json:"timestamp"`
 }
 
@@ -227,17 +228,25 @@ func (s *SmartContract) AuthorizeTransport(ctx contractapi.TransactionContextInt
 		return fmt.Errorf("Medical Officer digital eSign required for transport authorization (IT Act 2000 Section 10A)")
 	}
 
+	// Verify caller MSP
+	if err := verifyCallerMSP(ctx, "HospitalMSP", "HospitalOrgMSP", "BloodBankMSP", "BloodBankOrgMSP", "Org1MSP", "Org2MSP"); err != nil {
+		return err
+	}
+
 	// Verify MO signature format & credentials (reject arbitrary strings)
 	var moAuth MOAuthorization
 	isStructured := json.Unmarshal([]byte(moEsign), &moAuth) == nil
-	if isStructured {
-		if strings.TrimSpace(moAuth.DoctorID) == "" || strings.TrimSpace(moAuth.CouncilRegNo) == "" || len(moAuth.DigitalSignature) < 16 {
-			return fmt.Errorf("invalid Medical Officer credentials: DoctorID, CouncilRegNo, and verified DigitalSignature (>= 16 chars) required")
+	if isStructured && moAuth.DoctorID != "" {
+		if strings.TrimSpace(moAuth.CouncilRegNo) == "" {
+			return fmt.Errorf("invalid Medical Officer credentials: DoctorID and CouncilRegNo required")
+		}
+		moData := []byte(fmt.Sprintf("%s:%s", moAuth.DoctorID, unitId))
+		if err := verifyCryptographicSignature(moAuth.PublicKeyPEM, moData, moAuth.DigitalSignature); err != nil {
+			return fmt.Errorf("cryptographic verification failed for Medical Officer authorization: %w", err)
 		}
 	} else {
-		// If raw string signature, enforce minimum cryptographic length and non-arbitrary value
-		if len(moEsign) < 16 || strings.ToLower(moEsign) == "test" || strings.ToLower(moEsign) == "signature" {
-			return fmt.Errorf("unverified Medical Officer signature: must provide valid cryptographic signature or MO credentials JSON")
+		if err := verifyCryptographicSignature("", nil, moEsign); err != nil {
+			return fmt.Errorf("unverified Medical Officer signature: %w", err)
 		}
 	}
 

@@ -13,6 +13,7 @@ type ReconciliationAuth struct {
 	DoctorID         string `json:"doctorId"`
 	CouncilRegNo     string `json:"councilRegNo"`
 	DigitalSignature string `json:"digitalSignature"`
+	PublicKeyPEM     string `json:"publicKeyPEM,omitempty"`
 	ClinicalReview   string `json:"clinicalReview"`
 	Timestamp        string `json:"timestamp"`
 }
@@ -26,16 +27,24 @@ func (s *SmartContract) ReconcileUnit(ctx contractapi.TransactionContextInterfac
 		return fmt.Errorf("moSignature cannot be empty")
 	}
 
-	// Verify reconciliation signature format (reject arbitrary/empty strings)
+	// Verify invoker caller MSP
+	if err := verifyCallerMSP(ctx, "HospitalMSP", "HospitalOrgMSP", "BloodBankMSP", "BloodBankOrgMSP", "Org1MSP", "Org2MSP"); err != nil {
+		return err
+	}
+
+	// Verify reconciliation signature format & cryptographic integrity
 	var reconAuth ReconciliationAuth
 	if err := json.Unmarshal([]byte(moSignature), &reconAuth); err == nil && reconAuth.DoctorID != "" {
-		if strings.TrimSpace(reconAuth.CouncilRegNo) == "" || len(reconAuth.DigitalSignature) < 16 {
-			return fmt.Errorf("unverified reconciliation credentials: DoctorID, CouncilRegNo, and verified DigitalSignature (>= 16 chars) required")
+		if strings.TrimSpace(reconAuth.CouncilRegNo) == "" {
+			return fmt.Errorf("unverified reconciliation credentials: CouncilRegNo required")
+		}
+		reconData := []byte(fmt.Sprintf("%s:%s", reconAuth.DoctorID, unitId))
+		if err := verifyCryptographicSignature(reconAuth.PublicKeyPEM, reconData, reconAuth.DigitalSignature); err != nil {
+			return fmt.Errorf("cryptographic verification failed for reconciliation: %w", err)
 		}
 	} else {
-		// Enforce minimum cryptographic length and non-arbitrary value for string signatures
-		if len(moSignature) < 16 || strings.ToLower(moSignature) == "test" || strings.ToLower(moSignature) == "signature" {
-			return fmt.Errorf("unverified reconciliation signature: must provide valid cryptographic signature (>= 16 chars) or ReconciliationAuth JSON")
+		if err := verifyCryptographicSignature("", nil, moSignature); err != nil {
+			return fmt.Errorf("unverified reconciliation signature: must provide valid cryptographic signature: %w", err)
 		}
 	}
 

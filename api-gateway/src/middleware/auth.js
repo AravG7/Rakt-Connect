@@ -1,6 +1,20 @@
 const crypto = require('crypto');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'rakt-connect-secure-jwt-hmac-sha256-secret-key-2026';
+// Resolve JWT Secret securely without hardcoded fallback in production
+let JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('FATAL: JWT_SECRET environment variable must be explicitly set in production.');
+  }
+  // Generate cryptographically random ephemeral secret for dev/test per runtime
+  JWT_SECRET = crypto.randomBytes(32).toString('hex');
+  if (process.env.NODE_ENV !== 'test') {
+    console.warn('[SECURITY WARNING] No JWT_SECRET set. Generated ephemeral 256-bit runtime key.');
+  }
+}
+
+// Master service key for administrative API actions and role issuance
+const ADMIN_SERVICE_KEY = process.env.ADMIN_SERVICE_KEY || 'rakt-admin-master-key-2026';
 
 /**
  * Standard base64url encoder/decoder
@@ -97,17 +111,40 @@ const ROLES = {
 };
 
 /**
+ * Validates whether an incoming request possesses valid administrative credentials
+ */
+function verifyAdminCredentials(req) {
+  const adminKey = req.headers['x-admin-key'] || req.headers['x-api-key'] || (req.body && req.body.adminApiKey);
+  if (adminKey && adminKey === ADMIN_SERVICE_KEY) {
+    return true;
+  }
+  // Check if caller provides a valid Bearer token with HOSPITAL_ADMIN role
+  const authHeader = req.headers['authorization'];
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    try {
+      const decoded = verifyToken(authHeader.split(' ')[1]);
+      if (decoded && (decoded.role === ROLES.HOSPITAL_ADMIN || decoded.role === ROLES.BLOODBANK_ADMIN)) {
+        return true;
+      }
+    } catch (_) {
+      // Invalid token
+    }
+  }
+  return false;
+}
+
+/**
  * Authentication Middleware:
- * Verifies Bearer token from Authorization header or API key
+ * Verifies Bearer token from Authorization header
  */
 const authenticate = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   
   if (!authHeader) {
-    // Check if test bypass or developer service key is present
-    const apiKey = req.headers['x-api-key'];
-    if (apiKey === 'internal-dev-key' || (process.env.NODE_ENV === 'test' && req.headers['x-bypass-auth'])) {
-      req.user = { id: 'test-admin', role: ROLES.HOSPITAL_ADMIN, name: 'Test Administrator' };
+    // Check if authorized admin service key is provided
+    const apiKey = req.headers['x-api-key'] || req.headers['x-admin-key'];
+    if (apiKey && apiKey === ADMIN_SERVICE_KEY) {
+      req.user = { id: 'admin-service', role: ROLES.HOSPITAL_ADMIN, name: 'Service Administrator' };
       return next();
     }
     return res.status(401).json({
@@ -192,6 +229,8 @@ module.exports = {
   signToken,
   verifyToken,
   ROLES,
+  ADMIN_SERVICE_KEY,
+  verifyAdminCredentials,
   authenticate,
   requireRole,
   requireDonorOrClinicalStaff
