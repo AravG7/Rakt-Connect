@@ -32,16 +32,20 @@ func getClientIdentitySafe(ctx contractapi.TransactionContextInterface) cid.Clie
 	return clientID
 }
 
-// verifyCallerMSP verifies that the invoking transaction identity belongs to one of the authorized MSPs
+// verifyCallerMSP verifies that the invoking transaction identity belongs to one of the authorized MSPs.
+// STRICT FAIL-CLOSED: Rejects transactions if client identity is unavailable, lookup errors,
+// MSP is empty, or caller MSP is not explicitly in the allowedMSPs whitelist.
 func verifyCallerMSP(ctx contractapi.TransactionContextInterface, allowedMSPs ...string) error {
 	ci := getClientIdentitySafe(ctx)
 	if ci == nil {
-		// Mock test context or testing harness without client identity stub
-		return nil
+		return fmt.Errorf("access denied: transaction client identity is unavailable")
 	}
 	mspID, err := ci.GetMSPID()
-	if err != nil || mspID == "" {
-		return nil
+	if err != nil {
+		return fmt.Errorf("access denied: failed to retrieve caller MSP ID: %w", err)
+	}
+	if strings.TrimSpace(mspID) == "" {
+		return fmt.Errorf("access denied: caller identity has empty MSP ID")
 	}
 
 	for _, allowed := range allowedMSPs {
@@ -50,30 +54,27 @@ func verifyCallerMSP(ctx contractapi.TransactionContextInterface, allowedMSPs ..
 		}
 	}
 
-	return fmt.Errorf("caller identity MSP '%s' is not authorized; required one of %v", mspID, allowedMSPs)
+	return fmt.Errorf("access denied: caller identity MSP '%s' is not authorized; required one of %v", mspID, allowedMSPs)
 }
 
-// verifyCryptographicSignature verifies an ECDSA or RSA digital signature against a PEM public key or X.509 certificate
+// verifyCryptographicSignature verifies an ECDSA or RSA digital signature against a PEM public key or X.509 certificate.
+// STRICT FAIL-CLOSED: Rejects signatures if public key / cert PEM is missing, signature is empty/invalid,
+// certificate is expired/invalid, or cryptographic signature fails to verify against payload digest.
+// Eliminates any fail-open string-length / encoding fallbacks.
 func verifyCryptographicSignature(pubKeyOrCertPEM string, data []byte, sigHexOrB64 string) error {
 	trimmedPEM := strings.TrimSpace(pubKeyOrCertPEM)
 	trimmedSig := strings.TrimSpace(sigHexOrB64)
 
 	if trimmedSig == "" {
-		return fmt.Errorf("signature cannot be empty")
+		return fmt.Errorf("cryptographic verification failed: digital signature cannot be empty")
 	}
 
-	// If no public key PEM provided, validate that the signature string is a valid cryptographic hex/base64 string of sufficient length
 	if trimmedPEM == "" {
-		if len(trimmedSig) < 32 {
-			return fmt.Errorf("signature has insufficient length: expected at least 32 characters, got %d", len(trimmedSig))
-		}
-		// Verify signature is valid hex or base64 encoding
-		_, errHex := hex.DecodeString(trimmedSig)
-		_, errB64 := base64.StdEncoding.DecodeString(trimmedSig)
-		if errHex != nil && errB64 != nil {
-			return fmt.Errorf("signature is neither valid hex nor valid base64: %s", trimmedSig)
-		}
-		return nil
+		return fmt.Errorf("cryptographic verification failed: public key or X.509 certificate PEM is required (fail-closed)")
+	}
+
+	if len(data) == 0 {
+		return fmt.Errorf("cryptographic verification failed: signed payload data cannot be empty")
 	}
 
 	// Parse PEM block

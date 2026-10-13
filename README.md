@@ -61,8 +61,9 @@
 ### 1. Authentication, Authorization & DPDP Consent
 - **API Layer**: Standard JWT (HS256) with timing-safe signature verification and strict Role-Based Access Control (`DONOR`, `LAB_TECH`, `MEDICAL_OFFICER`, `HOSPITAL_ADMIN`, `BLOODBANK_ADMIN`, `DISASTER_ADMIN`, `AUDITOR`).
 - **Privileged Role Protection**: `POST /auth/token` strictly restricts issuance of privileged roles (`HOSPITAL_ADMIN`, `LAB_TECH`, `MEDICAL_OFFICER`, etc.) to authenticated callers providing valid administrative credentials (`x-admin-key`). Unauthenticated attempts receive `403 Forbidden`.
-- **Authentic OTP Verification**: `POST /auth/abha-login` generates real 6-digit cryptographic OTP challenges stored with 5-minute expiry. `POST /auth/verify-otp` validates the challenge, immediately invalidates the OTP upon consumption to prevent replay attacks, and rejects forged or expired OTPs with `401 Unauthorized`.
-- **Secret Management**: JWT secrets are never hardcoded with static fallbacks. In production, `process.env.JWT_SECRET` is strictly enforced. In development/testing, an ephemeral 256-bit cryptographic secret is generated at runtime per process.
+- **Zero Static Admin Secrets**: The hardcoded fallback admin key (`rakt-admin-master-key-2026`) has been completely removed. In production, `process.env.ADMIN_SERVICE_KEY` and `process.env.JWT_SECRET` are strictly required and throw fatal errors if omitted. In dev/test environments, ephemeral 256-bit cryptographic secrets are generated at runtime per process.
+- **Authentic OTP Verification & Delivery Provider Simulation**: `POST /auth/abha-login` generates real 6-digit cryptographic OTP challenges with per-ABHA rate limiting (maximum 3 requests per 10 minutes, 30-second cooldown). Responses are transparently labeled as `SIMULATED_SANDBOX_DISPATCH` for development pending production TRAI DLT / CDAC SMS gateway onboarding. In production, OTPs are dispatched out-of-band to telcos and never returned in HTTP payloads.
+- **Brute-Force OTP Protection**: `POST /auth/verify-otp` tracks failed verification attempts and immediately invalidates the challenge after 3 failed attempts, as well as upon successful consumption to prevent replay attacks.
 - **Donor Record Privacy**: Protected by `requireDonorOrClinicalStaff`. Callers can only view their own profile; clinical staff access requires clinical role verification and produces an audit trail. Unauthenticated access returns `401 Unauthorized`.
 - **Consent Enforcement**: `POST /donor/register` enforces explicit DPDP Act 2023 consent (`consentGiven: true`). Consent is never silently assumed.
 
@@ -78,26 +79,27 @@
   - Whole Blood & RBC: 2°C–6°C (excursions < 1°C or > 10°C trigger `Spoiled`)
   - FFP & Cryoprecipitate: ≤ -18°C (excursions > -15°C trigger `Spoiled`)
 - **Strict State Machine**: Enforces valid transitions (`COLLECTED` → `IN_TESTING` → `APPROVED` → `RESERVED` → `IN_TRANSIT` → `TRANSFUSED`). Terminal states (`TRANSFUSED`, `PERMANENTLY_REJECTED`, `SPOILED`, `EXPIRED`, `DISCARDED`) cannot undergo further lifecycle operations.
-- **Cryptographic Credential & Signature Verification in Chaincode**:
-  - Validates caller MSP identity (`ctx.GetClientIdentity().GetMSPID()`), ensuring transactions originate from authorized MSPs (`HospitalMSP`, `BloodBankMSP`).
-  - Lab test submissions support X.509 public key certificates and cryptographic **ECDSA ASN.1 / RSA PKCS#1 v1.5** digital signatures verified using Go's `crypto/x509` and `crypto/ecdsa` standard libraries. Tampered signatures are rejected on-chain.
-  - Mandatory screening tests (HIV 1/2, HBsAg, HCV, Malaria, Syphilis) must be explicitly `NEGATIVE` or `POSITIVE`.
-  - Donor Hemoglobin must be ≥ 12.5 g/dL. Any positive marker or low Hb triggers permanent rejection (`PERMANENTLY_REJECTED`).
-  - Transport authorization and transfusion reconciliation require verified Medical Officer credentials (NMC/State Medical Council registration number and cryptographic signature).
+- **Strict Fail-Closed Chaincode Security (`crypto_verifier.go`)**:
+  - **Fail-Closed MSP Identity Check**: `verifyCallerMSP` strictly rejects transactions when client identity is unavailable, lookup errors, or caller MSP is not in the whitelist (`HospitalMSP`, `BloodBankMSP`).
+  - **Fail-Closed Signature Check**: `verifyCryptographicSignature` mandates valid `PublicKeyPEM` or X.509 certificate and verifies digital signatures against the payload SHA-256 digest using Go's `crypto/ecdsa` and `crypto/rsa`. Any missing public key, empty signature, or unverified string is rejected on-chain (eliminating fail-open length/encoding bypasses).
+  - **Mandatory Verified Envelopes**: `SubmitTestResult` mandates `VerifiedLabSubmission` with valid `LabTechID`, `LabLicenseNo`, `PublicKeyPEM`, and digital signature. `AuthorizeTransport` mandates `MOAuthorization`. `ActivateDisasterMode` mandates `AdminSignature`. `ReconcileUnit` mandates `ReconciliationAuth`.
+  - Mandatory screening tests (HIV 1/2, HBsAg, HCV, Malaria, Syphilis) must be explicitly `NEGATIVE` or `POSITIVE`. Donor Hemoglobin must be ≥ 12.5 g/dL.
 
 ### 3. Disaster-Mode Controls (Black Swan Protocol)
 - **Distinct Multi-Sig Verification**: `POST /disaster/:eventId/approve` and chaincode `ActivateDisasterMode` enforce a minimum of **2 distinct authorized signers** (`admin1 != admin2`). Duplicate approvals by the same authority are rejected.
-- **Cryptographic Signature Verification**: Each disaster approval envelope verifies digital signatures against authorized administrative identities.
+- **Fail-Closed Cryptographic Signatures**: Each disaster approval envelope verifies digital signatures against authorized administrative identities.
 - **Authorized Authority Roles**: Validated against statutory disaster management roles (`STATE_HEALTH_SECRETARY`, `NBTC_DIRECTOR`, `NDMA_MEMBER`, `DISTRICT_COLLECTOR`, `CHIEF_MEDICAL_OFFICER`, `HOSPITAL_ADMIN`, `DISASTER_COORDINATOR`).
 - **Unit State Protection**: Units that are already `TRANSFUSED`, `PERMANENTLY_REJECTED`, `SPOILED`, `EXPIRED`, or `DISCARDED` are strictly blocked from emergency release.
 - **Reconciliation Controls**: Emergency transfusion units are marked `DISASTER_TRANSFUSED` with `reconciliationStatus = "PENDING"`. Post-disaster reconciliation requires verified Medical Officer credentials and cryptographic signature (`reconciliationStatus = "COMPLETED"`).
 
 ### 4. Authentic Standard Libraries for Cryptography & Routing
-- **NIST FIPS 203 ML-KEM-768 Vault (`PQCVault`)**:
+- **NIST FIPS 203 ML-KEM-768 Vault (`PQCVault`) & Secure Key Management**:
   - Implements authentic **NIST FIPS 203 ML-KEM-768** post-quantum key encapsulation via `@noble/post-quantum` (1184-byte public key vector, 1088-byte ciphertext vector, 32-byte shared secret).
   - Derives 256-bit symmetric key via HKDF-SHA256 with transactional salt.
   - Performs authenticated encryption with **AES-256-GCM** (12-byte IV, 16-byte authentication tag, AAD).
-  - Volatile memory wipe (`secureWipe`) zero-fills sensitive key buffers immediately after cryptographic use.
+  - **Protected Key Generation**: `POST /crypto/vault/generate-keys` requires administrative authentication (`HOSPITAL_ADMIN`). Unauthenticated access returns `401 Unauthorized`. Private keys are never leaked to the public.
+  - **Public Encryption Endpoint**: `GET /crypto/vault/public-key` exposes only public key parameters for encrypting health records without leaking private keys.
+  - **Protected Decryption**: `POST /crypto/vault/decrypt` requires authorized clinical staff or administrator roles.
 - **Uber H3 Spatial Routing Engine (`H3Router`)**:
   - Built with the official **Uber H3** library (`h3-js`), converting GPS coordinates to real 64-bit hexagonal cells (`h3.latLngToCell`) at Resolution 7 (~5.16 km²) and Resolution 8 (~0.74 km²).
   - Hexagonal k-ring neighbor search (`h3.gridDisk`) for multi-facility dispatch.
@@ -114,7 +116,7 @@
 
 ### 6. Hyperledger Fabric Gateway Integration
 - **Fabric Gateway SDK**: The API gateway connects via `@hyperledger/fabric-gateway` (`src/fabric/gateway.js`) using gRPC to `peer0.hospital.raktconnect.com:7051` and channel `rakt-channel`.
-- **Ledger-Backed Workflows**: Core workflows (`POST /donor/register`, `POST /unit/collect`, `POST /fabric/commit-transaction`) dispatch transactions directly through mapped chaincode contracts (`donorEligibility`, `lifecycle`, `validation`), recording committed transaction IDs on the ledger.
+- **Accurate Single-Contract Mapping**: Go chaincode `rakt_token.go` registers a single `SmartContract` on chaincode `'blood-bank'`. The gateway maps all modular domain aliases (`donorEligibility`, `lifecycle`, `validation`, `disaster`, etc.) to the default `'blood-bank'` contract, avoiding nonexistent namespace lookup errors on the peer.
 - **Resilient Fallback Mode**: When running in offline dev mode without Docker peer containers, transactions are cached with clear diagnostic ledger status.
 
 ---
@@ -125,11 +127,11 @@ To ensure complete architectural accuracy, integrations are labeled based on the
 
 | Integration | Current Implementation Status | Notes |
 |-------------|------------------------------|-------|
-| **NIST ML-KEM-768 & AES-256-GCM** | **Active & Implemented (Standard Lib)** | Authentic NIST FIPS 203 ML-KEM-768 via `@noble/post-quantum` + AES-256-GCM in `api-gateway/src/crypto/pqcVault.js`. |
+| **NIST ML-KEM-768 & AES-256-GCM** | **Active & Implemented (Standard Lib)** | Authentic NIST FIPS 203 ML-KEM-768 via `@noble/post-quantum` + AES-256-GCM in `api-gateway/src/crypto/pqcVault.js`. Protected keygen and public key endpoint. |
 | **H3 Spatial Routing** | **Active & Implemented (Standard Lib)** | Official Uber H3 library (`h3-js`) with `latLngToCell`, `gridDisk`, and `greatCircleDistance` in `api-gateway/src/routing/h3Router.js`. |
-| **Fabric Gateway SDK** | **Active & Implemented** | Connected via `@hyperledger/fabric-gateway` in `api-gateway/src/fabric/gateway.js` mapping all 9 modular chaincode contracts. |
+| **Fabric Gateway SDK** | **Active & Implemented** | Connected via `@hyperledger/fabric-gateway` in `api-gateway/src/fabric/gateway.js` mapping all aliases cleanly to default 'blood-bank' contract. |
 | **FHIR R4 Mapper & Validator** | **Active & Implemented** | Structural profile validator in `api-gateway/src/fhir/` with strict 404 lookups (zero fabricated fallbacks). |
-| **ABDM / ABHA Gateway** | **Sandbox Mock / Specification** | ABDM Sandbox compliant profile mapper & real cryptographic OTP challenge/verification engine; live connection planned pending production client credentials. |
+| **ABDM / ABHA Gateway** | **Sandbox Mock / Specification** | ABDM Sandbox compliant profile mapper & real cryptographic OTP challenge/verification engine with rate limiting; live connection planned pending production client credentials. |
 | **NHCX Clearinghouse** | **Simulator / Mock Router** | Formats valid Claim / ClaimResponse structures; live production connection planned pending IRDAI/NHCX sandbox onboarding. |
 | **AI Demand Forecasting** | **Calibrated Clinical Heuristics** | Microservice serves calibrated clinical baseline heuristic models; pre-trained PyTorch TFT neural network weights GPU deployment planned. |
 | **Income Tax Section 80G** | **§65B Certified Receipt Generator** | Generates digital tax receipts with Section 65B Evidence Act certificates; direct ITD e-Filing submission marked as planned work. |
@@ -163,16 +165,17 @@ The `docker-compose.yaml` explicitly mounts generated certificates and channel a
 ```bash
 cd chaincode/blood-bank/go
 go test -v ./...
-# → 6/6 tests pass: Donor consent, Safe unit rules, State transitions,
-#   Disaster multi-sig, Cold-chain excursions, and Cryptographic ECDSA signature verification.
+# → 7/7 tests pass: Donor consent, Safe unit rules, State transitions,
+#   Disaster multi-sig, Cold-chain excursions, Cryptographic ECDSA signature verification,
+#   and Fail-Closed security controls (MSP & signature rejection).
 ```
 
 ### 2. Run API Gateway Tests (Node.js)
 ```bash
 cd api-gateway
 npm test
-# → 30/30 tests pass: Auth & Privileged RBAC, Real OTP challenge/replay prevention,
-#   Safe unit rules, Disaster multi-sig, ML-KEM-768 FIPS 203 Vault,
+# → 34/34 tests pass: Auth & Privileged RBAC, Real OTP challenge/replay/rate-limiting,
+#   Safe unit rules, Disaster multi-sig, ML-KEM-768 FIPS 203 Vault (protected keygen & public key API),
 #   Uber H3 Spatial Routing, FHIR R4 Validator (strict 404 lookups),
 #   and Fabric Gateway ledger status/commit.
 ```

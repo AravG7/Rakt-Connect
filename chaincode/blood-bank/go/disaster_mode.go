@@ -37,7 +37,7 @@ var authorizedDisasterRoles = map[string]bool{
 	"DISASTER_COORDINATOR":   true,
 }
 
-// parseAndValidateAdminSig validates an individual admin signature entry and verifies cryptographic signature
+// parseAndValidateAdminSig validates an individual admin signature entry and verifies cryptographic signature (fail-closed)
 func parseAndValidateAdminSig(sigStr string) (*AdminSignature, error) {
 	sigStr = strings.TrimSpace(sigStr)
 	if sigStr == "" {
@@ -45,41 +45,33 @@ func parseAndValidateAdminSig(sigStr string) (*AdminSignature, error) {
 	}
 
 	var sig AdminSignature
-	// Attempt JSON unmarshaling first
-	if err := json.Unmarshal([]byte(sigStr), &sig); err == nil && sig.AdminID != "" {
-		if strings.TrimSpace(sig.Role) == "" || !authorizedDisasterRoles[sig.Role] {
-			return nil, fmt.Errorf("admin %s does not have an authorized disaster activation role (got '%s')", sig.AdminID, sig.Role)
-		}
-		
-		sigData := []byte(fmt.Sprintf("%s:%s", sig.AdminID, sig.Role))
-		if err := verifyCryptographicSignature(sig.PublicKeyPEM, sigData, sig.SignatureHash); err != nil {
-			return nil, fmt.Errorf("cryptographic verification failed for admin %s: %w", sig.AdminID, err)
-		}
-		return &sig, nil
+	if err := json.Unmarshal([]byte(sigStr), &sig); err != nil {
+		return nil, fmt.Errorf("invalid admin signature format: must be valid AdminSignature JSON envelope: %w", err)
 	}
 
-	// Support structured string format: "adminId:role:signatureHash"
-	parts := strings.Split(sigStr, ":")
-	if len(parts) >= 3 {
-		adminID := strings.TrimSpace(parts[0])
-		role := strings.TrimSpace(parts[1])
-		sigHash := strings.TrimSpace(parts[2])
-
-		if adminID == "" || !authorizedDisasterRoles[role] {
-			return nil, fmt.Errorf("invalid structured admin signature '%s'; requires valid AdminID and authorized role", sigStr)
-		}
-		if err := verifyCryptographicSignature("", nil, sigHash); err != nil {
-			return nil, fmt.Errorf("cryptographic verification failed for structured admin signature: %w", err)
-		}
-		return &AdminSignature{
-			AdminID:       adminID,
-			Role:          role,
-			SignatureHash: sigHash,
-			Timestamp:     time.Now().Format(time.RFC3339),
-		}, nil
+	if strings.TrimSpace(sig.AdminID) == "" {
+		return nil, fmt.Errorf("admin signature missing required AdminID (fail-closed)")
+	}
+	if strings.TrimSpace(sig.Role) == "" || !authorizedDisasterRoles[sig.Role] {
+		return nil, fmt.Errorf("admin %s does not have an authorized disaster activation role (got '%s')", sig.AdminID, sig.Role)
+	}
+	if strings.TrimSpace(sig.PublicKeyPEM) == "" {
+		return nil, fmt.Errorf("admin signature missing required PublicKeyPEM (fail-closed)")
+	}
+	if strings.TrimSpace(sig.SignatureHash) == "" {
+		return nil, fmt.Errorf("admin signature missing required SignatureHash (fail-closed)")
 	}
 
-	return nil, fmt.Errorf("invalid admin signature format; expected JSON or 'adminId:role:signatureHash', got '%s'", sigStr)
+	sigData := []byte(fmt.Sprintf("%s:%s", sig.AdminID, sig.Role))
+	if err := verifyCryptographicSignature(sig.PublicKeyPEM, sigData, sig.SignatureHash); err != nil {
+		return nil, fmt.Errorf("cryptographic verification failed for admin %s: %w", sig.AdminID, err)
+	}
+
+	if sig.Timestamp == "" {
+		sig.Timestamp = time.Now().Format(time.RFC3339)
+	}
+
+	return &sig, nil
 }
 
 // ActivateDisasterMode - verifies at least two distinct authorized signers bound to verified identities

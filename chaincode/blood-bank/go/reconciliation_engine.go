@@ -32,20 +32,28 @@ func (s *SmartContract) ReconcileUnit(ctx contractapi.TransactionContextInterfac
 		return err
 	}
 
-	// Verify reconciliation signature format & cryptographic integrity
+	// Verify reconciliation signature format & cryptographic integrity (fail-closed)
 	var reconAuth ReconciliationAuth
-	if err := json.Unmarshal([]byte(moSignature), &reconAuth); err == nil && reconAuth.DoctorID != "" {
-		if strings.TrimSpace(reconAuth.CouncilRegNo) == "" {
-			return fmt.Errorf("unverified reconciliation credentials: CouncilRegNo required")
-		}
-		reconData := []byte(fmt.Sprintf("%s:%s", reconAuth.DoctorID, unitId))
-		if err := verifyCryptographicSignature(reconAuth.PublicKeyPEM, reconData, reconAuth.DigitalSignature); err != nil {
-			return fmt.Errorf("cryptographic verification failed for reconciliation: %w", err)
-		}
-	} else {
-		if err := verifyCryptographicSignature("", nil, moSignature); err != nil {
-			return fmt.Errorf("unverified reconciliation signature: must provide valid cryptographic signature: %w", err)
-		}
+	if err := json.Unmarshal([]byte(moSignature), &reconAuth); err != nil {
+		return fmt.Errorf("invalid reconciliation authorization: must provide valid ReconciliationAuth JSON envelope: %w", err)
+	}
+
+	if strings.TrimSpace(reconAuth.DoctorID) == "" {
+		return fmt.Errorf("unverified reconciliation credentials: DoctorID required (fail-closed)")
+	}
+	if strings.TrimSpace(reconAuth.CouncilRegNo) == "" {
+		return fmt.Errorf("unverified reconciliation credentials: CouncilRegNo required (fail-closed)")
+	}
+	if strings.TrimSpace(reconAuth.PublicKeyPEM) == "" {
+		return fmt.Errorf("unverified reconciliation authorization: PublicKeyPEM required (fail-closed)")
+	}
+	if strings.TrimSpace(reconAuth.DigitalSignature) == "" {
+		return fmt.Errorf("unverified reconciliation authorization: DigitalSignature required (fail-closed)")
+	}
+
+	reconData := []byte(fmt.Sprintf("%s:%s", reconAuth.DoctorID, unitId))
+	if err := verifyCryptographicSignature(reconAuth.PublicKeyPEM, reconData, reconAuth.DigitalSignature); err != nil {
+		return fmt.Errorf("cryptographic verification failed for reconciliation: %w", err)
 	}
 
 	clientID := "AUTHORIZED_RECON_OFFICER"

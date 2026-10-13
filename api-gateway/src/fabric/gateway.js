@@ -39,20 +39,25 @@ class FabricGateway {
 
             this.network = this.gateway.getNetwork('rakt-channel');
             
-            // Map the 9 distinct modular contracts
+            // In Go chaincode 'rakt_token.go', SmartContract is registered as the default contract
+            // on chaincode 'blood-bank'. Subscribing to named contract namespaces like
+            // getContract('blood-bank', 'DonorEligibility') causes Fabric peer contract lookup to fail.
+            // Map all modular domain aliases directly to the default 'blood-bank' contract.
+            this.contract = this.network.getContract('blood-bank');
             this.contracts = {
-                donorEligibility: this.network.getContract('blood-bank', 'DonorEligibility'),
-                lifecycle: this.network.getContract('blood-bank', 'BloodUnitLifecycle'),
-                validation: this.network.getContract('blood-bank', 'ValidationContract'),
-                matching: this.network.getContract('blood-bank', 'MatchingContract'),
-                rareGroup: this.network.getContract('blood-bank', 'RareGroupRegistry'),
-                disaster: this.network.getContract('blood-bank', 'DisasterMode'),
-                reconciliation: this.network.getContract('blood-bank', 'ReconciliationEngine'),
-                hemo: this.network.getContract('blood-bank', 'Hemovigilance'),
-                token: this.network.getContract('blood-bank', 'RaktToken')
+                default: this.contract,
+                donorEligibility: this.contract,
+                lifecycle: this.contract,
+                validation: this.contract,
+                matching: this.contract,
+                rareGroup: this.contract,
+                disaster: this.contract,
+                reconciliation: this.contract,
+                hemo: this.contract,
+                token: this.contract
             };
 
-            console.log("Hyperledger Fabric v2.5 LTS Gateway SDK Initialized Successfully.");
+            console.log("Hyperledger Fabric v2.5 LTS Gateway SDK Initialized Successfully (single chaincode contract mapping).");
 
         } catch (error) {
             console.error(`Failed to connect to gateway: ${error}`);
@@ -70,8 +75,8 @@ class FabricGateway {
 
     async submitTransaction(contractName, tcnName, ...args) {
         try {
-            const contract = this.contracts[contractName];
-            if (!contract) throw new Error(`Contract ${contractName} not mapped`);
+            const contract = (contractName && this.contracts && this.contracts[contractName]) || this.contract;
+            if (!contract) throw new Error(`Contract ${contractName || 'default'} not mapped or gateway not connected`);
             const result = await contract.submitTransaction(tcnName, ...args);
             return result;
         } catch (error) {
@@ -82,8 +87,8 @@ class FabricGateway {
 
     async evaluateTransaction(contractName, tcnName, ...args) {
         try {
-            const contract = this.contracts[contractName];
-            if (!contract) throw new Error(`Contract ${contractName} not mapped`);
+            const contract = (contractName && this.contracts && this.contracts[contractName]) || this.contract;
+            if (!contract) throw new Error(`Contract ${contractName || 'default'} not mapped or gateway not connected`);
             const result = await contract.evaluateTransaction(tcnName, ...args);
             return result;
         } catch (error) {

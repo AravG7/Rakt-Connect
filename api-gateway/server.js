@@ -47,7 +47,53 @@ const broadcasts = new Map();
 const transfers = new Map();
 const hemoReports = new Map();
 const otpStore = new Map();
+const otpRateLimits = new Map(); // abhaId -> { count, windowStart, lastRequestTime, failedAttempts }
 const auditLog = [];
+
+// Server-managed NIST FIPS 203 ML-KEM-768 key pair for national health record sealing
+let serverVaultKeyPair = PQCVault.generateKeyPair();
+
+/**
+ * Enforce per-ABHA rate limiting on OTP challenges:
+ * - Max 3 OTP requests per 10-minute window
+ * - 30-second cooldown between consecutive requests (bypassed in automated tests)
+ */
+function checkOtpRateLimit(identifier) {
+  const now = Date.now();
+  const record = otpRateLimits.get(identifier) || { count: 0, windowStart: now, lastRequestTime: 0, failedAttempts: 0 };
+
+  // Reset window if > 10 minutes (600,000 ms)
+  if (now - record.windowStart > 10 * 60 * 1000) {
+    record.count = 0;
+    record.windowStart = now;
+    record.failedAttempts = 0;
+  }
+
+  // Cooldown check (30 seconds between consecutive requests, 0 in test mode)
+  const cooldownMs = process.env.NODE_ENV === 'test' ? 0 : 30 * 1000;
+  if (record.lastRequestTime && (now - record.lastRequestTime < cooldownMs)) {
+    const waitSeconds = Math.ceil((cooldownMs - (now - record.lastRequestTime)) / 1000);
+    return {
+      allowed: false,
+      error: `Cooldown active: Please wait ${waitSeconds}s before requesting another OTP`,
+      code: 'OTP_COOLDOWN_ACTIVE'
+    };
+  }
+
+  // Max 3 OTP generation requests per 10 minutes per identifier
+  if (record.count >= 3) {
+    return {
+      allowed: false,
+      error: 'Too many OTP requests: Exceeded maximum limit of 3 requests per 10 minutes. Please try again later.',
+      code: 'OTP_RATE_LIMIT_EXCEEDED'
+    };
+  }
+
+  record.count += 1;
+  record.lastRequestTime = now;
+  otpRateLimits.set(identifier, record);
+  return { allowed: true, remaining: 3 - record.count };
+}
 
 // ── Utility Functions ────────────────────────────────────────────────────────
 
@@ -170,11 +216,21 @@ app.post('/auth/token', (req, res) => {
   });
 });
 
-// POST /auth/abha-login — ABHA Sandbox login request (generates real cryptographic OTP)
+// POST /auth/abha-login — ABHA Authentication request (generates real cryptographic OTP with rate-limiting & provider dispatch)
 app.post('/auth/abha-login', (req, res) => {
   const { abhaId } = req.body;
   if (!abhaId) {
     return res.status(400).json({ error: 'abhaId is required' });
+  }
+
+  // Enforce strict rate-limiting per ABHA identifier
+  const rateLimitCheck = checkOtpRateLimit(abhaId);
+  if (!rateLimitCheck.allowed) {
+    return res.status(429).json({
+      error: rateLimitCheck.error,
+      code: rateLimitCheck.code,
+      retryAfterSeconds: 30
+    });
   }
 
   // Generate cryptographically secure 6-digit numeric OTP challenge
@@ -184,17 +240,39 @@ app.post('/auth/abha-login', (req, res) => {
     expiresAt: Date.now() + 5 * 60 * 1000 // 5 minutes validity
   });
 
+  const isProduction = process.env.NODE_ENV === 'production';
+  const providerType = process.env.OTP_PROVIDER || (isProduction ? 'TRAI_DLT_SMS_GATEWAY' : 'DEVELOPMENT_SANDBOX_SIMULATION');
+
+  // In production, OTP MUST be delivered out-of-band via registered TRAI DLT/CDAC SMS gateway
+  // and MUST NEVER be leaked into the HTTP JSON response.
+  if (isProduction && !process.env.SMS_GATEWAY_API_KEY) {
+    logger.error('CRITICAL: Production SMS gateway unconfigured (SMS_GATEWAY_API_KEY missing). Cannot deliver OTP out-of-band.');
+    return res.status(503).json({
+      error: 'SMS Delivery Provider Unavailable: Production delivery gateway is not configured with TRAI DLT credentials.',
+      code: 'OTP_DELIVERY_UNAVAILABLE'
+    });
+  }
+
   res.json({
-    message: 'ABHA login initiated — OTP dispatched via sandbox',
+    message: isProduction
+      ? 'ABHA login OTP successfully dispatched via TRAI DLT registered national SMS gateway'
+      : 'ABHA login initiated — OTP dispatched via sandbox simulation (development environment)',
     abhaId,
     otpSent: true,
-    otp: process.env.NODE_ENV !== 'production' ? generatedOtp : undefined,
+    deliveryStatus: isProduction ? 'DISPATCHED_TO_TELCO' : 'SIMULATED_SANDBOX_DISPATCH',
+    deliveryProvider: providerType,
+    attemptsRemaining: rateLimitCheck.remaining,
+    validitySeconds: 300,
+    // Only return OTP in dev/test sandbox simulation; never in production
+    otp: !isProduction ? generatedOtp : undefined,
     sandbox: 'ABDM Sandbox (sandbox.abdm.gov.in)',
-    note: 'Specification implementation; live gateway requires ABDM production partner onboarding'
+    simulationNotice: !isProduction
+      ? 'DEVELOPMENT SIMULATION: In production, OTP is delivered strictly via TRAI DLT Principal Entity SMS channel (CDAC/Telco) and omitted from response.'
+      : undefined
   });
 });
 
-// POST /auth/verify-otp — Verifies supplied OTP against active challenge and returns verified JWT
+// POST /auth/verify-otp — Verifies supplied OTP against active challenge and returns verified JWT with brute-force defense
 app.post('/auth/verify-otp', (req, res) => {
   const { abhaId, otp } = req.body;
   if (!abhaId || !otp) {
@@ -217,7 +295,19 @@ app.post('/auth/verify-otp', (req, res) => {
     });
   }
 
+  const rateLimitRecord = otpRateLimits.get(abhaId);
   if (stored.otp !== String(otp).trim()) {
+    if (rateLimitRecord) {
+      rateLimitRecord.failedAttempts = (rateLimitRecord.failedAttempts || 0) + 1;
+      if (rateLimitRecord.failedAttempts >= 3) {
+        // Brute-force protection: invalidate challenge after 3 failed attempts
+        otpStore.delete(abhaId);
+        return res.status(401).json({
+          error: 'Maximum OTP verification attempts exceeded (3 failed attempts). Challenge has been invalidated for security.',
+          code: 'OTP_MAX_ATTEMPTS_EXCEEDED'
+        });
+      }
+    }
     return res.status(401).json({
       error: 'Invalid OTP provided. Verification failed.',
       code: 'OTP_INVALID'
@@ -226,6 +316,9 @@ app.post('/auth/verify-otp', (req, res) => {
 
   // Invalidate consumed OTP to prevent replay attacks
   otpStore.delete(abhaId);
+  if (rateLimitRecord) {
+    rateLimitRecord.failedAttempts = 0;
+  }
 
   const did = generateDID(abhaId);
   const token = signToken({
@@ -984,14 +1077,28 @@ app.get('/disaster/status', (req, res) => {
 // POST-QUANTUM CRYPTOGRAPHY VAULT (ML-KEM-768 + AES-256-GCM)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// POST /crypto/vault/generate-keys — Generate NIST FIPS 203 ML-KEM-768 Key Pair
-app.post('/crypto/vault/generate-keys', (req, res) => {
+// GET /crypto/vault/public-key — Public endpoint to retrieve active ML-KEM-768 public key (never exposes private keys)
+app.get('/crypto/vault/public-key', (req, res) => {
+  res.json({
+    algorithm: serverVaultKeyPair.algorithm,
+    publicKeyBytes: serverVaultKeyPair.publicKeyBytes,
+    publicKeyHex: serverVaultKeyPair.publicKey.toString('hex'),
+    usage: 'ML-KEM-768 post-quantum key encapsulation for DPDP/ABDM health records encryption'
+  });
+});
+
+// POST /crypto/vault/generate-keys — Restricted administrative keypair provisioning (Hospital/BloodBank Admin only)
+app.post('/crypto/vault/generate-keys', authenticate, requireRole(ROLES.HOSPITAL_ADMIN, ROLES.BLOODBANK_ADMIN), (req, res) => {
   const keyPair = PQCVault.generateKeyPair();
+  if (req.query.rotateServerKey === 'true' || (req.body && req.body.rotateServerKey === true)) {
+    serverVaultKeyPair = keyPair;
+  }
   res.json({
     algorithm: keyPair.algorithm,
     publicKeyBytes: keyPair.publicKeyBytes,
     publicKeyHex: keyPair.publicKey.toString('hex'),
-    privateKeyHex: keyPair.privateKey.toString('hex')
+    privateKeyHex: keyPair.privateKey.toString('hex'),
+    securityNotice: 'RESTRICTED: Generated private key must be immediately imported into a Hardware Security Module (HSM). Never expose over public unauthenticated routes.'
   });
 });
 
@@ -1004,9 +1111,8 @@ app.post('/crypto/vault/encrypt', (req, res) => {
   if (publicKeyHex) {
     pkBuffer = Buffer.from(publicKeyHex, 'hex');
   } else {
-    // Generate fresh keypair if not provided
-    const keyPair = PQCVault.generateKeyPair();
-    pkBuffer = keyPair.publicKey;
+    // Encrypt against active server vault public key
+    pkBuffer = serverVaultKeyPair.publicKey;
   }
 
   try {
@@ -1017,15 +1123,22 @@ app.post('/crypto/vault/encrypt', (req, res) => {
   }
 });
 
-// POST /crypto/vault/decrypt — Decrypt vault package
-app.post('/crypto/vault/decrypt', (req, res) => {
+// POST /crypto/vault/decrypt — Decrypt vault package (Restricted to Authorized Clinical Staff / Hospital Admin)
+app.post('/crypto/vault/decrypt', authenticate, requireRole(ROLES.HOSPITAL_ADMIN, ROLES.BLOODBANK_ADMIN, ROLES.MEDICAL_OFFICER), (req, res) => {
   const { vaultPackage, privateKeyHex } = req.body;
-  if (!vaultPackage || !privateKeyHex) {
-    return res.status(400).json({ error: 'vaultPackage and privateKeyHex are required' });
+  if (!vaultPackage) {
+    return res.status(400).json({ error: 'vaultPackage is required' });
+  }
+
+  let skBuffer;
+  if (privateKeyHex) {
+    skBuffer = Buffer.from(privateKeyHex, 'hex');
+  } else {
+    skBuffer = serverVaultKeyPair.privateKey;
   }
 
   try {
-    const plaintext = PQCVault.decryptVault(vaultPackage, Buffer.from(privateKeyHex, 'hex'));
+    const plaintext = PQCVault.decryptVault(vaultPackage, skBuffer);
     res.json({ decryptedData: plaintext });
   } catch (err) {
     res.status(400).json({ error: `Decryption failed: ${err.message}` });

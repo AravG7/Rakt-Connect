@@ -70,6 +70,9 @@ describe('Rakt-Connect API Gateway', () => {
         .send({ abhaId: testAbha });
       expect(initRes.statusCode).toEqual(200);
       expect(initRes.body).toHaveProperty('otp');
+      expect(initRes.body.deliveryStatus).toEqual('SIMULATED_SANDBOX_DISPATCH');
+      expect(initRes.body.deliveryProvider).toEqual('DEVELOPMENT_SANDBOX_SIMULATION');
+      expect(initRes.body).toHaveProperty('simulationNotice');
       const challengeOtp = initRes.body.otp;
 
       // 2. Reject incorrect OTP
@@ -93,6 +96,29 @@ describe('Rakt-Connect API Gateway', () => {
         .send({ abhaId: testAbha, otp: challengeOtp });
       expect(replayRes.statusCode).toEqual(401);
       expect(replayRes.body.code).toEqual('OTP_NOT_FOUND');
+    });
+
+    it('POST /auth/abha-login - should enforce rate limiting (max 3 requests per window)', async () => {
+      const rateLimitAbha = '14-1122-3344-5566';
+      // Request 1
+      const res1 = await request(app).post('/auth/abha-login').send({ abhaId: rateLimitAbha });
+      expect(res1.statusCode).toEqual(200);
+      expect(res1.body.attemptsRemaining).toEqual(2);
+
+      // Request 2
+      const res2 = await request(app).post('/auth/abha-login').send({ abhaId: rateLimitAbha });
+      expect(res2.statusCode).toEqual(200);
+      expect(res2.body.attemptsRemaining).toEqual(1);
+
+      // Request 3
+      const res3 = await request(app).post('/auth/abha-login').send({ abhaId: rateLimitAbha });
+      expect(res3.statusCode).toEqual(200);
+      expect(res3.body.attemptsRemaining).toEqual(0);
+
+      // Request 4 - Rate limit exceeded
+      const res4 = await request(app).post('/auth/abha-login').send({ abhaId: rateLimitAbha });
+      expect(res4.statusCode).toEqual(429);
+      expect(res4.body.code).toEqual('OTP_RATE_LIMIT_EXCEEDED');
     });
 
     it('GET /donor/:did - should return 401 when unauthenticated', async () => {
@@ -384,6 +410,69 @@ describe('Rakt-Connect API Gateway', () => {
 
       const decrypted = PQCVault.decryptVault(vault, keyPair.privateKey);
       expect(decrypted).toEqual(secretPayload);
+    });
+
+    it('GET /crypto/vault/public-key - should return active ML-KEM-768 public key without leaking private keys', async () => {
+      const res = await request(app).get('/crypto/vault/public-key');
+      expect(res.statusCode).toEqual(200);
+      expect(res.body).toHaveProperty('publicKeyHex');
+      expect(res.body.publicKeyBytes).toEqual(1184);
+      expect(res.body).not.toHaveProperty('privateKeyHex');
+    });
+
+    it('POST /crypto/vault/generate-keys - should reject unauthenticated callers and non-admin roles', async () => {
+      // 1. Unauthenticated
+      const unauthRes = await request(app).post('/crypto/vault/generate-keys');
+      expect(unauthRes.statusCode).toEqual(401);
+
+      // 2. Non-admin caller (donor)
+      const donorRes = await request(app)
+        .post('/crypto/vault/generate-keys')
+        .set('Authorization', `Bearer ${donorToken}`);
+      expect(donorRes.statusCode).toEqual(403);
+      expect(donorRes.body.code).toEqual('ACCESS_DENIED');
+
+      // 3. Authorized Hospital Admin
+      const adminRes = await request(app)
+        .post('/crypto/vault/generate-keys')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(adminRes.statusCode).toEqual(200);
+      expect(adminRes.body).toHaveProperty('publicKeyHex');
+      expect(adminRes.body).toHaveProperty('privateKeyHex');
+      expect(adminRes.body).toHaveProperty('securityNotice');
+    });
+
+    it('POST /crypto/vault/encrypt & /decrypt - should encrypt with server public key and enforce clinical authorization on decrypt', async () => {
+      const payload = 'Sovereign_Blood_Supply_Record_2026';
+      // 1. Encrypt against server public key
+      const encRes = await request(app)
+        .post('/crypto/vault/encrypt')
+        .send({ data: payload });
+      expect(encRes.statusCode).toEqual(200);
+      expect(encRes.body).toHaveProperty('vaultPackage');
+
+      const vaultPkg = encRes.body.vaultPackage;
+
+      // 2. Reject unauthenticated decrypt
+      const unauthDec = await request(app)
+        .post('/crypto/vault/decrypt')
+        .send({ vaultPackage: vaultPkg });
+      expect(unauthDec.statusCode).toEqual(401);
+
+      // 3. Reject unauthorized donor decrypt
+      const donorDec = await request(app)
+        .post('/crypto/vault/decrypt')
+        .set('Authorization', `Bearer ${donorToken}`)
+        .send({ vaultPackage: vaultPkg });
+      expect(donorDec.statusCode).toEqual(403);
+
+      // 4. Authorized Medical Officer decrypt
+      const moDec = await request(app)
+        .post('/crypto/vault/decrypt')
+        .set('Authorization', `Bearer ${moToken}`)
+        .send({ vaultPackage: vaultPkg });
+      expect(moDec.statusCode).toEqual(200);
+      expect(moDec.body.decryptedData).toEqual(payload);
     });
 
     it('H3Router - should compute genuine Uber H3 hex indices, calculate great circle distance and rank facilities', () => {

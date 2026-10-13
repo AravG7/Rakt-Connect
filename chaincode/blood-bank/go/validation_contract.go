@@ -61,29 +61,32 @@ func (s *SmartContract) SubmitTestResult(ctx contractapi.TransactionContextInter
 		return fmt.Errorf("unit %s not in testable state (current: '%s')", unitId, unit.State)
 	}
 
-	var results TestResults
 	var labSubmission VerifiedLabSubmission
-
-	// Check if submitted as a VerifiedLabSubmission envelope or direct TestResults
-	if err := json.Unmarshal([]byte(resultsJSON), &labSubmission); err == nil && labSubmission.LabTechID != "" {
-		// Enforce verified lab technician credentials
-		if strings.TrimSpace(labSubmission.LabLicenseNo) == "" {
-			return fmt.Errorf("unverified lab credentials: LabLicenseNo required")
-		}
-
-		// Cryptographic signature check
-		testData := []byte(fmt.Sprintf("%s:%s:%s", labSubmission.LabTechID, unitId, labSubmission.TestResults.HIV))
-		if err := verifyCryptographicSignature(labSubmission.PublicKeyPEM, testData, labSubmission.DigitalSignature); err != nil {
-			return fmt.Errorf("cryptographic signature verification failed: %w", err)
-		}
-
-		results = labSubmission.TestResults
-	} else {
-		// Direct TestResults format: parse strictly
-		if err := json.Unmarshal([]byte(resultsJSON), &results); err != nil {
-			return fmt.Errorf("invalid resultsJSON: failed to unmarshal test results: %w", err)
-		}
+	if err := json.Unmarshal([]byte(resultsJSON), &labSubmission); err != nil {
+		return fmt.Errorf("invalid resultsJSON: lab test submission must be a valid VerifiedLabSubmission JSON envelope: %w", err)
 	}
+
+	// Enforce verified lab technician credentials (fail-closed)
+	if strings.TrimSpace(labSubmission.LabTechID) == "" {
+		return fmt.Errorf("unverified lab credentials: LabTechID required (fail-closed)")
+	}
+	if strings.TrimSpace(labSubmission.LabLicenseNo) == "" {
+		return fmt.Errorf("unverified lab credentials: LabLicenseNo required (fail-closed)")
+	}
+	if strings.TrimSpace(labSubmission.PublicKeyPEM) == "" {
+		return fmt.Errorf("unverified lab submission: PublicKeyPEM required (fail-closed)")
+	}
+	if strings.TrimSpace(labSubmission.DigitalSignature) == "" {
+		return fmt.Errorf("unverified lab submission: DigitalSignature required (fail-closed)")
+	}
+
+	// Cryptographic signature check against signed test results data
+	testData := []byte(fmt.Sprintf("%s:%s:%s", labSubmission.LabTechID, unitId, labSubmission.TestResults.HIV))
+	if err := verifyCryptographicSignature(labSubmission.PublicKeyPEM, testData, labSubmission.DigitalSignature); err != nil {
+		return fmt.Errorf("cryptographic signature verification failed: %w", err)
+	}
+
+	results := labSubmission.TestResults
 
 	// Validate all mandatory infectious disease screening markers (WHO & NBTC mandate)
 	results.HIV = strings.ToUpper(strings.TrimSpace(results.HIV))

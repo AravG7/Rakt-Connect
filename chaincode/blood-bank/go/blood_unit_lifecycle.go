@@ -233,21 +233,28 @@ func (s *SmartContract) AuthorizeTransport(ctx contractapi.TransactionContextInt
 		return err
 	}
 
-	// Verify MO signature format & credentials (reject arbitrary strings)
+	// Verify MO signature format & credentials (fail-closed)
 	var moAuth MOAuthorization
-	isStructured := json.Unmarshal([]byte(moEsign), &moAuth) == nil
-	if isStructured && moAuth.DoctorID != "" {
-		if strings.TrimSpace(moAuth.CouncilRegNo) == "" {
-			return fmt.Errorf("invalid Medical Officer credentials: DoctorID and CouncilRegNo required")
-		}
-		moData := []byte(fmt.Sprintf("%s:%s", moAuth.DoctorID, unitId))
-		if err := verifyCryptographicSignature(moAuth.PublicKeyPEM, moData, moAuth.DigitalSignature); err != nil {
-			return fmt.Errorf("cryptographic verification failed for Medical Officer authorization: %w", err)
-		}
-	} else {
-		if err := verifyCryptographicSignature("", nil, moEsign); err != nil {
-			return fmt.Errorf("unverified Medical Officer signature: %w", err)
-		}
+	if err := json.Unmarshal([]byte(moEsign), &moAuth); err != nil {
+		return fmt.Errorf("invalid Medical Officer authorization: must provide valid MOAuthorization JSON envelope: %w", err)
+	}
+
+	if strings.TrimSpace(moAuth.DoctorID) == "" {
+		return fmt.Errorf("invalid Medical Officer credentials: DoctorID required (fail-closed)")
+	}
+	if strings.TrimSpace(moAuth.CouncilRegNo) == "" {
+		return fmt.Errorf("invalid Medical Officer credentials: CouncilRegNo required (fail-closed)")
+	}
+	if strings.TrimSpace(moAuth.PublicKeyPEM) == "" {
+		return fmt.Errorf("invalid Medical Officer credentials: PublicKeyPEM required (fail-closed)")
+	}
+	if strings.TrimSpace(moAuth.DigitalSignature) == "" {
+		return fmt.Errorf("invalid Medical Officer credentials: DigitalSignature required (fail-closed)")
+	}
+
+	moData := []byte(fmt.Sprintf("%s:%s", moAuth.DoctorID, unitId))
+	if err := verifyCryptographicSignature(moAuth.PublicKeyPEM, moData, moAuth.DigitalSignature); err != nil {
+		return fmt.Errorf("cryptographic verification failed for Medical Officer authorization: %w", err)
 	}
 
 	data, err := ctx.GetStub().GetState("UNIT_" + unitId)

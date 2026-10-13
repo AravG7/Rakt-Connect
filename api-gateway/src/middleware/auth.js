@@ -14,7 +14,17 @@ if (!JWT_SECRET) {
 }
 
 // Master service key for administrative API actions and role issuance
-const ADMIN_SERVICE_KEY = process.env.ADMIN_SERVICE_KEY || 'rakt-admin-master-key-2026';
+let ADMIN_SERVICE_KEY = process.env.ADMIN_SERVICE_KEY;
+if (!ADMIN_SERVICE_KEY) {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('FATAL: ADMIN_SERVICE_KEY environment variable must be explicitly configured in production.');
+  }
+  // Generate cryptographically random ephemeral key for dev/test per runtime (never a static string)
+  ADMIN_SERVICE_KEY = crypto.randomBytes(32).toString('hex');
+  if (process.env.NODE_ENV !== 'test') {
+    console.warn('[SECURITY WARNING] No ADMIN_SERVICE_KEY set. Generated ephemeral 256-bit runtime key.');
+  }
+}
 
 /**
  * Standard base64url encoder/decoder

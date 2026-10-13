@@ -13,19 +13,57 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hyperledger/fabric-chaincode-go/pkg/cid"
 	"github.com/hyperledger/fabric-chaincode-go/shim"
 	"github.com/hyperledger/fabric-chaincode-go/shimtest"
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 	"github.com/stretchr/testify/require"
 )
 
+type MockClientIdentity struct {
+	mspID string
+	id    string
+	cert  *x509.Certificate
+}
+
+func (m *MockClientIdentity) GetID() (string, error) {
+	if m.id != "" {
+		return m.id, nil
+	}
+	return "x509::CN=DrAdmin,OU=Hospital::CN=HospitalCA", nil
+}
+
+func (m *MockClientIdentity) GetMSPID() (string, error) {
+	if m.mspID != "" {
+		return m.mspID, nil
+	}
+	return "HospitalMSP", nil
+}
+
+func (m *MockClientIdentity) GetAttributeValue(attrName string) (string, bool, error) {
+	return "", false, nil
+}
+
+func (m *MockClientIdentity) AssertAttributeValue(attrName, attrValue string) error {
+	return nil
+}
+
+func (m *MockClientIdentity) GetX509Certificate() (*x509.Certificate, error) {
+	return m.cert, nil
+}
+
 type MockContext struct {
-	stub *shimtest.MockStub
+	stub           *shimtest.MockStub
+	clientIdentity cid.ClientIdentity
 	contractapi.TransactionContextInterface
 }
 
 func (mc *MockContext) GetStub() shim.ChaincodeStubInterface {
 	return mc.stub
+}
+
+func (mc *MockContext) GetClientIdentity() cid.ClientIdentity {
+	return mc.clientIdentity
 }
 
 func setupTestContext(t *testing.T) (*SmartContract, *MockContext, *shimtest.MockStub) {
@@ -34,9 +72,106 @@ func setupTestContext(t *testing.T) (*SmartContract, *MockContext, *shimtest.Moc
 	require.NoError(t, err)
 
 	stub := shimtest.NewMockStub("test_stub", cc)
-	ctx := &MockContext{stub: stub}
+	ctx := &MockContext{
+		stub:           stub,
+		clientIdentity: &MockClientIdentity{mspID: "HospitalMSP", id: "x509::CN=DrAdmin,OU=Hospital::CN=HospitalCA"},
+	}
 	return contract, ctx, stub
 }
+
+// ── Cryptographic Test Helpers ──────────────────────────────────────────────────
+
+func createTestSigningKey(t *testing.T) (*ecdsa.PrivateKey, string) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	pubBytes, err := x509.MarshalPKIXPublicKey(&privKey.PublicKey)
+	require.NoError(t, err)
+	pubPEM := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: pubBytes}))
+	return privKey, pubPEM
+}
+
+func signPayload(t *testing.T, privKey *ecdsa.PrivateKey, payload []byte) string {
+	hash := sha256.Sum256(payload)
+	sigBytes, err := ecdsa.SignASN1(rand.Reader, privKey, hash[:])
+	require.NoError(t, err)
+	return hex.EncodeToString(sigBytes)
+}
+
+func createTestLabSubmission(t *testing.T, unitId string, results TestResults) string {
+	privKey, pubPEM := createTestSigningKey(t)
+	labTechId := "LAB-TECH-01"
+	payload := []byte(fmt.Sprintf("%s:%s:%s", labTechId, unitId, results.HIV))
+	sigHex := signPayload(t, privKey, payload)
+
+	submission := VerifiedLabSubmission{
+		LabTechID:        labTechId,
+		LabLicenseNo:     "NABL-MED-1234",
+		DigitalSignature: sigHex,
+		PublicKeyPEM:     pubPEM,
+		TestTimestamp:    time.Now().UTC().Format(time.RFC3339),
+		TestResults:      results,
+	}
+	bytes, err := json.Marshal(submission)
+	require.NoError(t, err)
+	return string(bytes)
+}
+
+func createTestMOAuth(t *testing.T, unitId string) string {
+	privKey, pubPEM := createTestSigningKey(t)
+	doctorId := "DOC-99"
+	payload := []byte(fmt.Sprintf("%s:%s", doctorId, unitId))
+	sigHex := signPayload(t, privKey, payload)
+
+	auth := MOAuthorization{
+		DoctorID:         doctorId,
+		CouncilRegNo:     "MCI-88219",
+		DigitalSignature: sigHex,
+		PublicKeyPEM:     pubPEM,
+		Timestamp:        time.Now().UTC().Format(time.RFC3339),
+	}
+	bytes, err := json.Marshal(auth)
+	require.NoError(t, err)
+	return string(bytes)
+}
+
+func createTestDisasterSig(t *testing.T, adminId, role string) string {
+	privKey, pubPEM := createTestSigningKey(t)
+	payload := []byte(fmt.Sprintf("%s:%s", adminId, role))
+	sigHex := signPayload(t, privKey, payload)
+
+	sig := AdminSignature{
+		AdminID:       adminId,
+		Role:          role,
+		SignatureHash: sigHex,
+		PublicKeyPEM:  pubPEM,
+		Timestamp:     time.Now().UTC().Format(time.RFC3339),
+	}
+	bytes, err := json.Marshal(sig)
+	require.NoError(t, err)
+	return string(bytes)
+}
+
+func createTestReconAuth(t *testing.T, unitId string) string {
+	privKey, pubPEM := createTestSigningKey(t)
+	doctorId := "DOC-RECON-1"
+	payload := []byte(fmt.Sprintf("%s:%s", doctorId, unitId))
+	sigHex := signPayload(t, privKey, payload)
+
+	auth := ReconciliationAuth{
+		DoctorID:         doctorId,
+		CouncilRegNo:     "MCI-77312",
+		DigitalSignature: sigHex,
+		PublicKeyPEM:     pubPEM,
+		ClinicalReview:   "Emergency transfusion verified post-event",
+		Timestamp:        time.Now().UTC().Format(time.RFC3339),
+	}
+	bytes, err := json.Marshal(auth)
+	require.NoError(t, err)
+	return string(bytes)
+}
+
+// ── Tests ──────────────────────────────────────────────────────────────────────
 
 func TestRegisterDonorWithConsent(t *testing.T) {
 	contract, ctx, stub := setupTestContext(t)
@@ -92,9 +227,17 @@ func TestBloodUnitLifecycleAndValidations(t *testing.T) {
 	err = contract.CollectUnit(ctx, "UNIT-003", "DONOR-001", "O+", "WholeBlood", 20, collectionTime, "BATCH-01")
 	require.Error(t, err)
 
-	// 5. Test SubmitTestResult - negative safe results
-	safeResults := `{"HIV":"NEGATIVE","HBsAg":"NEGATIVE","HCV":"NEGATIVE","Malaria":"NEGATIVE","Syphilis":"NEGATIVE","Hb":"13.5"}`
-	err = contract.SubmitTestResult(ctx, "UNIT-001", safeResults)
+	// 5. Test SubmitTestResult - verified safe lab submission
+	safeResults := TestResults{
+		HIV:      "NEGATIVE",
+		HBsAg:    "NEGATIVE",
+		HCV:      "NEGATIVE",
+		Malaria:  "NEGATIVE",
+		Syphilis: "NEGATIVE",
+		Hb:       "13.5",
+	}
+	submissionJSON := createTestLabSubmission(t, "UNIT-001", safeResults)
+	err = contract.SubmitTestResult(ctx, "UNIT-001", submissionJSON)
 	require.NoError(t, err)
 
 	stateBytes, _ := stub.GetState("UNIT_UNIT-001")
@@ -110,8 +253,16 @@ func TestBloodUnitLifecycleAndValidations(t *testing.T) {
 	require.Error(t, err, "Arbitrary test results must be rejected")
 
 	// 7. Test SubmitTestResult - infectious marker must result in Permanent Rejection
-	hivPosResults := `{"HIV":"POSITIVE","HBsAg":"NEGATIVE","HCV":"NEGATIVE","Malaria":"NEGATIVE","Syphilis":"NEGATIVE","Hb":"14.0"}`
-	err = contract.SubmitTestResult(ctx, "UNIT-004", hivPosResults)
+	hivPosResults := TestResults{
+		HIV:      "POSITIVE",
+		HBsAg:    "NEGATIVE",
+		HCV:      "NEGATIVE",
+		Malaria:  "NEGATIVE",
+		Syphilis: "NEGATIVE",
+		Hb:       "14.0",
+	}
+	hivSubmissionJSON := createTestLabSubmission(t, "UNIT-004", hivPosResults)
+	err = contract.SubmitTestResult(ctx, "UNIT-004", hivSubmissionJSON)
 	require.NoError(t, err)
 
 	stateBytes, _ = stub.GetState("UNIT_UNIT-004")
@@ -119,7 +270,8 @@ func TestBloodUnitLifecycleAndValidations(t *testing.T) {
 	require.Equal(t, "PermanentlyRejected", unit.State)
 
 	// 8. Cannot transition permanently rejected unit
-	err = contract.AuthorizeTransport(ctx, "UNIT-004", `{"doctorId":"DOC-01","councilRegNo":"MCI-12345","digitalSignature":"0123456789abcdef0123456789abcdef"}`)
+	moAuthJSON := createTestMOAuth(t, "UNIT-004")
+	err = contract.AuthorizeTransport(ctx, "UNIT-004", moAuthJSON)
 	require.Error(t, err, "Cannot authorize transport for rejected unit")
 }
 
@@ -132,16 +284,24 @@ func TestTransportAndTransfusionStateTransitions(t *testing.T) {
 	err := contract.CollectUnit(ctx, "UNIT-100", "DONOR-001", "A+", "RBC", 350, collectionTime, "BATCH-10")
 	require.NoError(t, err)
 
-	safeResults := `{"HIV":"NEGATIVE","HBsAg":"NEGATIVE","HCV":"NEGATIVE","Malaria":"NEGATIVE","Syphilis":"NEGATIVE","Hb":"13.0"}`
-	err = contract.SubmitTestResult(ctx, "UNIT-100", safeResults)
+	safeResults := TestResults{
+		HIV:      "NEGATIVE",
+		HBsAg:    "NEGATIVE",
+		HCV:      "NEGATIVE",
+		Malaria:  "NEGATIVE",
+		Syphilis: "NEGATIVE",
+		Hb:       "13.0",
+	}
+	subJSON := createTestLabSubmission(t, "UNIT-100", safeResults)
+	err = contract.SubmitTestResult(ctx, "UNIT-100", subJSON)
 	require.NoError(t, err)
 
 	// Cannot transport unit in Approved state before Reserving
-	validMOSig := `{"doctorId":"DOC-99","councilRegNo":"MCI-88219","digitalSignature":"f8a92b3c4d5e6f7a8b9c0d1e2f3a4b5c"}`
-	err = contract.AuthorizeTransport(ctx, "UNIT-100", validMOSig)
+	validMOAuth := createTestMOAuth(t, "UNIT-100")
+	err = contract.AuthorizeTransport(ctx, "UNIT-100", validMOAuth)
 	require.Error(t, err, "Unit must be in Reserved state before transport")
 
-	// Reserve unit via matching contract or direct state
+	// Reserve unit via direct state transition
 	stateBytes, _ := stub.GetState("UNIT_UNIT-100")
 	var unit BloodUnit
 	_ = json.Unmarshal(stateBytes, &unit)
@@ -153,8 +313,8 @@ func TestTransportAndTransfusionStateTransitions(t *testing.T) {
 	err = contract.AuthorizeTransport(ctx, "UNIT-100", "test")
 	require.Error(t, err, "Dummy signature string must be rejected")
 
-	// Authorize transport with valid MO credentials
-	err = contract.AuthorizeTransport(ctx, "UNIT-100", validMOSig)
+	// Authorize transport with valid MO credentials & cryptographic signature
+	err = contract.AuthorizeTransport(ctx, "UNIT-100", validMOAuth)
 	require.NoError(t, err)
 
 	stateBytes, _ = stub.GetState("UNIT_UNIT-100")
@@ -180,7 +340,7 @@ func TestDisasterModeMultiSigAndStateProtection(t *testing.T) {
 	defer stub.MockTransactionEnd("tx_disaster_1")
 
 	// 1. Fail activation with only 1 signature
-	sig1 := `{"adminId":"ADMIN-01","role":"STATE_HEALTH_SECRETARY","signatureHash":"0123456789abcdef0123456789abcdef"}`
+	sig1 := createTestDisasterSig(t, "ADMIN-01", "STATE_HEALTH_SECRETARY")
 	err := contract.ActivateDisasterMode(ctx, "DISASTER-01", "2026-10-13T12:00:00Z", "50km", []string{sig1})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "minimum 2 distinct org admins")
@@ -191,13 +351,13 @@ func TestDisasterModeMultiSigAndStateProtection(t *testing.T) {
 	require.Contains(t, err.Error(), "duplicate admin signer detected")
 
 	// 3. Fail activation with unauthorized role
-	unauthorizedSig := `{"adminId":"ADMIN-02","role":"REGULAR_NURSE","signatureHash":"fedcba9876543210fedcba9876543210"}`
+	unauthorizedSig := createTestDisasterSig(t, "ADMIN-02", "REGULAR_NURSE")
 	err = contract.ActivateDisasterMode(ctx, "DISASTER-01", "2026-10-13T12:00:00Z", "50km", []string{sig1, unauthorizedSig})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "does not have an authorized disaster activation role")
 
 	// 4. Successful activation with 2 distinct authorized signers
-	sig2 := `{"adminId":"ADMIN-02","role":"NBTC_DIRECTOR","signatureHash":"fedcba9876543210fedcba9876543210"}`
+	sig2 := createTestDisasterSig(t, "ADMIN-02", "NBTC_DIRECTOR")
 	err = contract.ActivateDisasterMode(ctx, "DISASTER-01", "2026-10-13T12:00:00Z", "50km", []string{sig1, sig2})
 	require.NoError(t, err)
 
@@ -222,8 +382,16 @@ func TestDisasterModeMultiSigAndStateProtection(t *testing.T) {
 	// 6. Valid emergency transfusion of viable unit
 	err = contract.CollectUnit(ctx, "UNIT-DISASTER-2", "DONOR-001", "O-", "WholeBlood", 350, collectionTime, "BATCH-DIS")
 	require.NoError(t, err)
-	safeResults := `{"HIV":"NEGATIVE","HBsAg":"NEGATIVE","HCV":"NEGATIVE","Malaria":"NEGATIVE","Syphilis":"NEGATIVE","Hb":"13.5"}`
-	err = contract.SubmitTestResult(ctx, "UNIT-DISASTER-2", safeResults)
+	safeResults := TestResults{
+		HIV:      "NEGATIVE",
+		HBsAg:    "NEGATIVE",
+		HCV:      "NEGATIVE",
+		Malaria:  "NEGATIVE",
+		Syphilis: "NEGATIVE",
+		Hb:       "13.5",
+	}
+	subJSON := createTestLabSubmission(t, "UNIT-DISASTER-2", safeResults)
+	err = contract.SubmitTestResult(ctx, "UNIT-DISASTER-2", subJSON)
 	require.NoError(t, err)
 
 	err = contract.EmergencyTransfuse(ctx, "UNIT-DISASTER-2", "DISASTER-01", "PATIENT_ABHA_888", "Mass Casualty Triage")
@@ -234,9 +402,9 @@ func TestDisasterModeMultiSigAndStateProtection(t *testing.T) {
 	require.Equal(t, "DISASTER_TRANSFUSED", unit.State)
 	require.Equal(t, "PENDING", unit.ReconciliationStatus)
 
-	// 7. Reconcile unit with verified Medical Officer credentials
-	reconSig := `{"doctorId":"DOC-RECON-1","councilRegNo":"MCI-77312","digitalSignature":"abcdef1234567890abcdef1234567890","clinicalReview":"Successful emergency transfusion verified post-event"}`
-	err = contract.ReconcileUnit(ctx, "UNIT-DISASTER-2", reconSig)
+	// 7. Reconcile unit with verified Medical Officer credentials & digital signature
+	reconSigJSON := createTestReconAuth(t, "UNIT-DISASTER-2")
+	err = contract.ReconcileUnit(ctx, "UNIT-DISASTER-2", reconSigJSON)
 	require.NoError(t, err)
 
 	stateBytes, _ = stub.GetState("UNIT_UNIT-DISASTER-2")
@@ -331,3 +499,74 @@ func TestCryptographicSignatureVerification(t *testing.T) {
 	require.Contains(t, err.Error(), "cryptographic signature verification failed")
 }
 
+func TestFailClosedSecurityControls(t *testing.T) {
+	contract, ctx, stub := setupTestContext(t)
+	stub.MockTransactionStart("tx_failclosed_1")
+	defer stub.MockTransactionEnd("tx_failclosed_1")
+
+	collectionTime := time.Now().UTC().Format(time.RFC3339)
+	err := contract.CollectUnit(ctx, "UNIT-FC-1", "DONOR-001", "O+", "WholeBlood", 350, collectionTime, "BATCH-FC")
+	require.NoError(t, err)
+
+	// 1. Fail closed on missing client identity (ci == nil)
+	noIdentityCtx := &MockContext{stub: stub, clientIdentity: nil}
+	err = verifyCallerMSP(noIdentityCtx, "HospitalMSP")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "client identity is unavailable")
+
+	// 2. Fail closed on rogue caller MSP
+	rogueCtx := &MockContext{
+		stub:           stub,
+		clientIdentity: &MockClientIdentity{mspID: "RogueAttackerMSP"},
+	}
+	err = verifyCallerMSP(rogueCtx, "HospitalMSP", "BloodBankMSP")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "is not authorized")
+
+	// 3. Fail closed on missing public key in verifyCryptographicSignature (no raw string bypass)
+	err = verifyCryptographicSignature("", []byte("payload"), "0123456789abcdef0123456789abcdef")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "public key or X.509 certificate PEM is required (fail-closed)")
+
+	// 4. Fail closed when empty signature or empty payload is passed
+	privKey, pubPEM := createTestSigningKey(t)
+	err = verifyCryptographicSignature(pubPEM, []byte("payload"), "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "digital signature cannot be empty")
+
+	err = verifyCryptographicSignature(pubPEM, nil, "0123456789abcdef")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "signed payload data cannot be empty")
+
+	// 5. Fail closed on wrong signing key
+	otherKey, _ := createTestSigningKey(t)
+	sigWithOtherKey := signPayload(t, otherKey, []byte("payload"))
+	err = verifyCryptographicSignature(pubPEM, []byte("payload"), sigWithOtherKey)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "ECDSA cryptographic signature verification failed")
+
+	// 6. SubmitTestResult fails closed when called without envelope
+	err = contract.SubmitTestResult(ctx, "UNIT-FC-1", `{"HIV":"NEGATIVE","Hb":"14"}`)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "LabTechID required (fail-closed)")
+
+	// 7. AuthorizeTransport fails closed when called with raw string
+	err = contract.AuthorizeTransport(ctx, "UNIT-FC-1", "doctor-raw-signature-string")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "must provide valid MOAuthorization JSON envelope")
+
+	// 8. Disaster mode fails closed when called with structured colon string
+	err = contract.ActivateDisasterMode(ctx, "DISASTER-FC", "2026-10-13T12:00:00Z", "50km", []string{
+		"ADMIN-1:STATE_HEALTH_SECRETARY:0123456789abcdef",
+		"ADMIN-2:NBTC_DIRECTOR:0123456789abcdef",
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "must be valid AdminSignature JSON envelope")
+
+	// 9. ReconcileUnit fails closed when called with raw string
+	err = contract.ReconcileUnit(ctx, "UNIT-FC-1", "raw-retroactive-doctor-string")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "must provide valid ReconciliationAuth JSON envelope")
+
+	_ = privKey
+}

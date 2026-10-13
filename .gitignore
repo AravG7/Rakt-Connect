@@ -15,7 +15,8 @@ __pycache__/
 *$py.class
 venv/
 .env
-.env.example
+.env.local
+.env.*.local
 # Hyperledger Fabric Generated Items (Network)
 network/crypto-config/
 network/channel-artifacts/
