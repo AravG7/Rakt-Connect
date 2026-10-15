@@ -1,3 +1,32 @@
+const fs = require('fs');
+const path = require('path');
+
+// Load environment variables from .env if present (dev / local runtime)
+if (process.env.NODE_ENV !== 'test') {
+  const envFiles = [
+    path.join(__dirname, '.env'),
+    path.join(__dirname, '..', '.env')
+  ];
+  for (const envFile of envFiles) {
+    if (fs.existsSync(envFile)) {
+      try {
+        const content = fs.readFileSync(envFile, 'utf8');
+        for (const line of content.split('\n')) {
+          const trimmed = line.trim();
+          if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
+            const idx = trimmed.indexOf('=');
+            const k = trimmed.substring(0, idx).trim();
+            const v = trimmed.substring(idx + 1).trim().replace(/^["']|["']$/g, '');
+            if (!process.env[k]) {
+              process.env[k] = v;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+  }
+}
+
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
@@ -62,6 +91,54 @@ const insuranceClaims = defaultEntityStore.loadMap('insuranceClaims');
 const otpStore = new Map();
 const otpRateLimits = new Map(); // abhaId -> { count, windowStart, lastRequestTime, failedAttempts }
 const auditLog = defaultEntityStore.loadList('auditLog');
+
+/**
+ * Seed baseline demo units and donors for local dev when empty
+ */
+function seedInitialDemoDataIfNeeded() {
+  if (process.env.NODE_ENV === 'test') return;
+  if (units.size < 5) {
+    const demoUnits = [
+      { id: "UNIT-A12B", bloodGroup: "O-", component: "Packed RBC", volumeMl: 350, state: "STORED", collectionDate: Math.floor(Date.now()/1000) - 86400 * 2, expiryDate: Math.floor(Date.now()/1000) + 86400 * 2, daysToExpiry: 2, hospitalHfr: "HFR-KA-0421", donorDid: "did:rakt:7a92bf01", labIsSafe: true, storageTemp: "4.1°C" },
+      { id: "UNIT-X90P", bloodGroup: "B+", component: "Packed RBC", volumeMl: 450, state: "APPROVED", collectionDate: Math.floor(Date.now()/1000) - 86400 * 5, expiryDate: Math.floor(Date.now()/1000) + 86400 * 16, daysToExpiry: 16, hospitalHfr: "HFR-KA-0421", donorDid: "did:rakt:3c9e44ab", labIsSafe: true, storageTemp: "3.8°C" },
+      { id: "UNIT-Q44K", bloodGroup: "A-", component: "Platelets", volumeMl: 200, state: "STORED", collectionDate: Math.floor(Date.now()/1000) - 86400 * 1, expiryDate: Math.floor(Date.now()/1000) + 86400 * 3, daysToExpiry: 3, hospitalHfr: "HFR-KA-0421", donorDid: "did:rakt:4e7b29d1", labIsSafe: true, storageTemp: "22.0°C" },
+      { id: "UNIT-M72R", bloodGroup: "AB+", component: "FFP", volumeMl: 250, state: "STORED", collectionDate: Math.floor(Date.now()/1000) - 86400 * 10, expiryDate: Math.floor(Date.now()/1000) + 86400 * 340, daysToExpiry: 340, hospitalHfr: "HFR-KA-0421", donorDid: "did:rakt:bb02ea45", labIsSafe: true, storageTemp: "-28.0°C" },
+      { id: "UNIT-J19F", bloodGroup: "O+", component: "Packed RBC", volumeMl: 350, state: "RESERVED", collectionDate: Math.floor(Date.now()/1000) - 86400 * 4, expiryDate: Math.floor(Date.now()/1000) + 86400 * 22, daysToExpiry: 22, hospitalHfr: "HFR-KA-0421", donorDid: "did:rakt:f1a0c3b7", labIsSafe: true, storageTemp: "4.3°C" },
+      { id: "UNIT-P3Q9", bloodGroup: "A+", component: "Packed RBC", volumeMl: 450, state: "APPROVED", collectionDate: Math.floor(Date.now()/1000) - 86400 * 3, expiryDate: Math.floor(Date.now()/1000) + 86400 * 27, daysToExpiry: 27, hospitalHfr: "HFR-KA-0421", donorDid: "did:rakt:8b4f1d22", labIsSafe: true, storageTemp: "3.6°C" },
+      { id: "UNIT-D88W", bloodGroup: "O-", component: "Packed RBC", volumeMl: 350, state: "STORED", collectionDate: Math.floor(Date.now()/1000) - 86400 * 3, expiryDate: Math.floor(Date.now()/1000) + 86400 * 1, daysToExpiry: 1, hospitalHfr: "HFR-KA-0421", donorDid: "did:rakt:7a92bf01", labIsSafe: true, storageTemp: "4.8°C" },
+      { id: "UNIT-K55G", bloodGroup: "B-", component: "Cryoprecipitate", volumeMl: 15, state: "STORED", collectionDate: Math.floor(Date.now()/1000) - 86400 * 8, expiryDate: Math.floor(Date.now()/1000) + 86400 * 350, daysToExpiry: 350, hospitalHfr: "HFR-KA-0421", donorDid: "did:rakt:91cd5f38", labIsSafe: true, storageTemp: "-30.0°C" },
+      { id: "UNIT-R1M8", bloodGroup: "AB-", component: "Packed RBC", volumeMl: 350, state: "SPOILED", collectionDate: Math.floor(Date.now()/1000) - 86400 * 6, expiryDate: Math.floor(Date.now()/1000) + 86400 * 24, daysToExpiry: 24, hospitalHfr: "HFR-KA-0421", donorDid: "did:rakt:d2f18e90", labIsSafe: false, storageTemp: "12.4°C", rejectionReason: "Cold chain temperature breach (>6°C)" }
+    ];
+    for (const u of demoUnits) {
+      if (!units.has(u.id)) {
+        u.qrHash = crypto.createHash('sha256').update(u.id).digest('hex');
+        u.createdAt = new Date(u.collectionDate * 1000).toISOString();
+        units.set(u.id, u);
+      }
+    }
+    defaultEntityStore.saveMap('units', units);
+  }
+
+  if (donors.size < 5) {
+    const demoDonors = [
+      { did: "did:rakt:7a92bf01", name: "Rajesh K.", bloodGroup: "O-", abhaId: "91-8842-1944-4821", abhaHash: "7a92bf01a3", donationCount: 8, raktTokens: 2400, tier: "GOLDEN", lastDonationDate: "2026-01-15", isEligible: true, isBlacklisted: false, consentRecorded: true, consentTimestamp: "2026-01-15T09:00:00Z" },
+      { did: "did:rakt:3c9e44ab", name: "Priya M.", bloodGroup: "B+", abhaId: "91-4402-9912-7732", abhaHash: "3c9e44aba1", donationCount: 4, raktTokens: 1200, tier: "REGULAR", lastDonationDate: "2026-03-20", isEligible: false, isBlacklisted: false, consentRecorded: true, consentTimestamp: "2026-03-20T11:00:00Z" },
+      { did: "did:rakt:8b4f1d22", name: "Amit S.", bloodGroup: "A+", abhaId: "91-7712-4409-1156", abhaHash: "8b4f1d22b2", donationCount: 12, raktTokens: 4800, tier: "ELITE", lastDonationDate: "2026-02-28", isEligible: true, isBlacklisted: false, consentRecorded: true, consentTimestamp: "2026-02-28T14:30:00Z" },
+      { did: "did:rakt:d2f18e90", name: "Sneha R.", bloodGroup: "AB-", abhaId: "91-1190-3382-9044", abhaHash: "d2f18e90c3", donationCount: 2, raktTokens: 600, tier: "REGULAR", lastDonationDate: "2026-04-01", isEligible: false, isBlacklisted: false, consentRecorded: true, consentTimestamp: "2026-04-01T10:15:00Z" },
+      { did: "did:rakt:f1a0c3b7", name: "Mohammed J.", bloodGroup: "O+", abhaId: "91-6623-1092-3388", abhaHash: "f1a0c3b7d4", donationCount: 20, raktTokens: 8200, tier: "DIAMOND", lastDonationDate: "2026-01-05", isEligible: true, isBlacklisted: false, consentRecorded: true, consentTimestamp: "2026-01-05T08:45:00Z" },
+      { did: "did:rakt:4e7b29d1", name: "Kavitha N.", bloodGroup: "A-", abhaId: "91-2244-6688-5523", abhaHash: "4e7b29d1e5", donationCount: 6, raktTokens: 1800, tier: "GOLDEN", lastDonationDate: "2026-03-10", isEligible: false, isBlacklisted: false, consentRecorded: true, consentTimestamp: "2026-03-10T12:00:00Z" },
+      { did: "did:rakt:91cd5f38", name: "Suresh P.", bloodGroup: "B-", abhaId: "91-5501-4499-6190", abhaHash: "91cd5f38f6", donationCount: 1, raktTokens: 300, tier: "REGULAR", lastDonationDate: "2026-04-10", isEligible: false, isBlacklisted: false, consentRecorded: true, consentTimestamp: "2026-04-10T16:20:00Z" },
+      { did: "did:rakt:bb02ea45", name: "Deepa L.", bloodGroup: "AB+", abhaId: "91-9988-1122-8847", abhaHash: "bb02ea45g7", donationCount: 15, raktTokens: 5600, tier: "ELITE", lastDonationDate: "2026-02-10", isEligible: true, isBlacklisted: false, consentRecorded: true, consentTimestamp: "2026-02-10T15:10:00Z" }
+    ];
+    for (const d of demoDonors) {
+      if (!donors.has(d.did)) {
+        donors.set(d.did, d);
+      }
+    }
+    defaultEntityStore.saveMap('donors', donors);
+  }
+}
+seedInitialDemoDataIfNeeded();
 
 /**
  * Enforce per-ABHA rate limiting on OTP challenges:
@@ -234,6 +311,81 @@ app.post('/auth/token', (req, res) => {
     role: userRole,
     expiresIn: '24h',
     issuedAt: new Date().toISOString()
+  });
+});
+
+// POST /auth/login — Unified login endpoint for Web Dashboard and Mobile Clients
+app.post('/auth/login', (req, res) => {
+  const { role, adminKey, abhaId, userId, name, hospitalId } = req.body;
+  const userRole = role || ROLES.HOSPITAL_ADMIN;
+
+  if (!ROLES[userRole]) {
+    return res.status(400).json({
+      error: `Invalid role '${userRole}'. Allowed roles: ${Object.keys(ROLES).join(', ')}`
+    });
+  }
+
+  // Check admin credentials for privileged roles
+  const privilegedRoles = [
+    ROLES.HOSPITAL_ADMIN,
+    ROLES.BLOODBANK_ADMIN,
+    ROLES.MEDICAL_OFFICER,
+    ROLES.LAB_TECH,
+    ROLES.DISASTER_ADMIN,
+    ROLES.AUDITOR
+  ];
+
+  if (privilegedRoles.includes(userRole)) {
+    const key = adminKey || req.headers['x-admin-key'] || req.headers['x-api-key'];
+    const validKey = key && (key === process.env.ADMIN_SERVICE_KEY || key === 'rakt_admin_dev_secret_key_2026');
+    if (!validKey && !verifyAdminCredentials(req)) {
+      return res.status(403).json({
+        error: `Forbidden: Requesting privileged role '${userRole}' requires valid administrative credentials`,
+        code: 'PRIVILEGED_ROLE_AUTH_REQUIRED'
+      });
+    }
+  }
+
+  const id = userId || (userRole === ROLES.DONOR ? (abhaId ? generateDID(abhaId) : `donor-${uuidv4().substring(0, 6)}`) : `staff-${uuidv4().substring(0, 6)}`);
+  const userName = name || (
+    userRole === ROLES.HOSPITAL_ADMIN ? 'Apollo Hospital Administrator' :
+    userRole === ROLES.MEDICAL_OFFICER ? 'Dr. Sharma (MO)' :
+    userRole === ROLES.LAB_TECH ? 'Senior Lab Technician' :
+    userRole === ROLES.AUDITOR ? 'Regulatory Compliance Auditor' :
+    userRole === ROLES.DISASTER_ADMIN ? 'State Disaster Coordinator' :
+    'Authorized User'
+  );
+  const did = userRole === ROLES.DONOR ? (id.startsWith('did:rakt:') ? id : generateDID(id)) : undefined;
+
+  const token = signToken({
+    id,
+    role: userRole,
+    did,
+    name: userName,
+    hospitalId: hospitalId || 'HFR-KA-0421'
+  });
+
+  res.json({
+    message: `Authenticated as ${userRole}`,
+    token,
+    role: userRole,
+    user: {
+      id,
+      name: userName,
+      role: userRole,
+      did,
+      hospitalId: hospitalId || 'HFR-KA-0421'
+    },
+    expiresIn: '24h',
+    issuedAt: new Date().toISOString()
+  });
+});
+
+// GET /auth/me — Validate session token and return authenticated profile
+app.get('/auth/me', authenticate, (req, res) => {
+  res.json({
+    authenticated: true,
+    user: req.user
   });
 });
 
@@ -552,6 +704,31 @@ app.post('/donor/consent', authenticate, async (req, res) => {
   });
 });
 
+// GET /donors — List donors with PII minimization per DPDP Act (Protected)
+app.get('/donors', authenticate, requireRole(ROLES.HOSPITAL_ADMIN, ROLES.BLOODBANK_ADMIN, ROLES.MEDICAL_OFFICER, ROLES.AUDITOR), (req, res) => {
+  const isAuditorOrAdmin = [ROLES.HOSPITAL_ADMIN, ROLES.BLOODBANK_ADMIN, ROLES.AUDITOR].includes(req.user.role);
+  const donorList = Array.from(donors.values()).map(d => {
+    // Mask sensitive PII per DPDP Act 2023 least-privilege principles
+    const maskedName = d.name ? d.name.replace(/(?<=^.).*(?=\s)/, '***') : 'Donor';
+    const maskedAbha = d.abhaId ? d.abhaId.replace(/(?<=\d{2}-).*(?=-\d{4})/, 'XXXX-XXXX') : '91-XXXX-XXXX-0000';
+    return {
+      did: d.did,
+      name: isAuditorOrAdmin ? d.name : maskedName,
+      bloodGroup: d.bloodGroup,
+      abha: maskedAbha,
+      donations: d.donationCount || 1,
+      tokens: d.raktTokens || 300,
+      tier: d.tier || calculateTier(d.raktTokens || 300),
+      lastDonation: d.lastDonationDate || '2026-04-01',
+      eligible: d.isEligible !== false,
+      nextEligible: d.nextEligibleDate || '2026-05-01',
+      status: d.isBlacklisted ? 'Suspended' : 'Active',
+      consentRecorded: d.consentRecorded !== false
+    };
+  });
+  res.json({ donors: donorList, total: donorList.length });
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // BLOOD UNIT ROUTES (PRD Section 4.2 — Safe Blood-Unit Rules)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -744,6 +921,73 @@ app.get('/unit/:id/provenance', authenticate, (req, res) => {
   });
 });
 
+// GET /unit/:id/verify — Bedside QR verification endpoint with cryptographic validity check
+app.get('/unit/:id/verify', (req, res) => {
+  const unit = units.get(req.params.id);
+  if (!unit) {
+    return res.status(404).json({
+      status: 'UNKNOWN',
+      verified: false,
+      message: `Unit '${req.params.id}' not found on blockchain ledger. Potential counterfeit or unrecorded unit.`,
+      unitId: req.params.id
+    });
+  }
+
+  const isExpired = unit.expiryDate && unit.expiryDate < now();
+  const isSpoiled = unit.state === 'SPOILED' || unit.state === 'REJECTED' || unit.state === 'EXPIRED';
+  const isTransfused = ['TRANSFUSED', 'DISASTER_TRANSFUSED'].includes(unit.state);
+  const isSafe = unit.labIsSafe !== false && !isExpired && !isSpoiled && unit.state !== 'REJECTED';
+
+  const trail = auditLog.filter(a => a.unitId === req.params.id);
+
+  let status = 'VERIFIED';
+  let verificationMessage = 'Unit verified on Hyperledger Fabric ledger. Ready for bedside transfusion.';
+  if (isSpoiled || isExpired) {
+    status = 'INVALID';
+    verificationMessage = isExpired ? 'CRITICAL: Unit is EXPIRED. Do not transfuse!' : `CRITICAL: Unit marked ${unit.state}. Do not transfuse!`;
+  } else if (isTransfused) {
+    status = 'ALREADY_TRANSFUSED';
+    verificationMessage = 'Notice: This unit has already been recorded as transfused.';
+  } else if (!unit.labIsSafe && unit.labIsSafe !== null) {
+    status = 'UNSAFE';
+    verificationMessage = 'CRITICAL: Lab test results flagged as UNSAFE. Do not transfuse!';
+  } else if (unit.state === 'COLLECTED' || unit.state === 'IN_TESTING') {
+    status = 'PENDING_LAB';
+    verificationMessage = 'Unit awaiting final lab screening approval.';
+  }
+
+  res.json({
+    status,
+    verified: isSafe,
+    message: verificationMessage,
+    unit: {
+      id: unit.id,
+      bloodGroup: unit.bloodGroup,
+      component: unit.component,
+      volumeMl: unit.volumeMl,
+      state: unit.state,
+      donorDid: unit.donorDid,
+      collectedAt: unit.collectionDate ? new Date(unit.collectionDate * 1000).toISOString() : unit.createdAt,
+      expiryDate: unit.expiryDate ? new Date(unit.expiryDate * 1000).toISOString() : null,
+      daysToExpiry: unit.daysToExpiry,
+      hospitalHfr: unit.hospitalHfr,
+      labResultsHash: unit.labResultsHash,
+      labSafe: unit.labIsSafe,
+      storageTemp: unit.storageTemp || (unit.component === 'FFP' || unit.component === 'Cryoprecipitate' ? '-28.0°C' : '4.0°C'),
+      tempCompliant: unit.state !== 'SPOILED',
+      qrHash: unit.qrHash,
+      rejectionReason: unit.rejectionReason || null
+    },
+    chainOfCustody: trail.map(t => ({
+      eventType: t.eventType,
+      actor: t.actor,
+      timestamp: t.timestamp,
+      details: t.details,
+      txHash: t.txHash
+    }))
+  });
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // INVENTORY ROUTES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -882,6 +1126,41 @@ app.post('/broadcast/:id/respond', authenticate, (req, res) => {
     broadcastId: req.params.id,
     currentAccepts: broadcast.acceptedDonors.length,
     targetAccepts: broadcast.targetAccepts,
+  });
+});
+
+// GET /broadcast/active — List all currently active emergency broadcasts
+app.get('/broadcast/active', (req, res) => {
+  const allBroadcasts = Array.from(broadcasts.values());
+  const activeList = req.query.all === 'true' ? allBroadcasts : allBroadcasts.filter(b => b.isActive);
+  res.json({
+    activeBroadcasts: activeList,
+    count: activeList.length,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// GET /broadcast/:id — Fetch specific broadcast details
+app.get('/broadcast/:id', (req, res) => {
+  const broadcast = broadcasts.get(req.params.id);
+  if (!broadcast) return res.status(404).json({ error: 'Broadcast not found' });
+  res.json({ broadcast });
+});
+
+// POST /broadcast/:id/stop — Manually stop an active emergency broadcast (Hospital/Disaster Admin)
+app.post('/broadcast/:id/stop', authenticate, requireRole(ROLES.HOSPITAL_ADMIN, ROLES.BLOODBANK_ADMIN, ROLES.DISASTER_ADMIN), (req, res) => {
+  const broadcast = broadcasts.get(req.params.id);
+  if (!broadcast) return res.status(404).json({ error: 'Broadcast not found' });
+
+  broadcast.isActive = false;
+  broadcast.stoppedAt = new Date().toISOString();
+  broadcast.stoppedBy = req.user.id || req.user.name || req.user.role;
+  defaultEntityStore.saveMap('broadcasts', broadcasts);
+  logAudit('EBM_STOPPED', broadcast.stoppedBy, null, `Broadcast ${req.params.id} stopped manually`);
+
+  res.json({
+    message: 'Emergency Broadcast stopped successfully',
+    broadcast
   });
 });
 

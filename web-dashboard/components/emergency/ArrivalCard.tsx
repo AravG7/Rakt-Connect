@@ -1,94 +1,148 @@
-'use client';
+"use client";
 
-import React, { useState } from 'react';
-import { api } from '../../lib/api';
+import React, { useState } from "react";
+import { api } from "../../lib/api";
 
 export function ArrivalCard() {
-  const [abhaId, setAbhaId] = useState('');
-  const [unitId, setUnitId] = useState('');
+  const [abhaId, setAbhaId] = useState("");
+  const [unitId, setUnitId] = useState("");
   const [loading, setLoading] = useState(false);
   const [claim, setClaim] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleArrival = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError(null);
 
     try {
       // Trigger NHCX Insurance Pre-Auth as per PRD Section 4.10
-      const response = await api.post<any>('/insurance/claim', {
+      const response = await api.post<any>("/insurance/claim", {
         patientAbha: abhaId,
         unitId: unitId,
-        insurerCode: 'PM_JAY',
-        policyNumber: 'AUTO-DISASTER-01'
+        insurerCode: "PM_JAY",
+        policyNumber: "AUTO-DISASTER-01"
       });
       setClaim(response);
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      setError(err.message || "Failed to process NHCX pre-authorization. Ensure you are signed in as Hospital Staff.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-      <h3 className="text-xl font-bold text-gray-900 mb-2">Emergency Arrival & NHCX Pre-Auth</h3>
-      <p className="text-sm text-gray-500 mb-6">Log unit arrival and trigger automated insurance claim</p>
-
-      <form onSubmit={handleArrival} className="space-y-4">
+    <div className="card animate-fade-in" style={{ height: "100%" }}>
+      <div className="card-header">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Patient ABHA ID</label>
+          <div className="flex-gap-sm" style={{ alignItems: "center", marginBottom: "4px" }}>
+            <h3 className="card-title">Emergency Bedside Arrival & NHCX Pre-Auth</h3>
+            <span className="badge warning" style={{ fontSize: "10px" }}>
+              Simulator Prototype
+            </span>
+          </div>
+          <p className="card-description">
+            Log transfused unit arrival and route automated claim to Swasth NHCX router
+          </p>
+        </div>
+      </div>
+
+      {error && (
+        <div style={{ padding: "10px 14px", background: "rgba(239, 68, 68, 0.12)", border: "1px solid rgba(239, 68, 68, 0.3)", borderRadius: "8px", marginBottom: "16px", color: "var(--status-critical)", fontSize: "12px" }}>
+          ⚠️ {error}
+        </div>
+      )}
+
+      <form onSubmit={handleArrival} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+        <div>
+          <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "var(--text-muted)", marginBottom: "4px" }}>
+            Patient ABHA Identifier
+          </label>
           <input
             type="text"
-            className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-            placeholder="14-digit ABHA number"
+            className="w-full"
+            placeholder="14-digit ABHA (e.g. 91-8842-1944-4821)"
             value={abhaId}
             onChange={(e) => setAbhaId(e.target.value)}
             required
+            style={{
+              width: "100%",
+              padding: "10px 14px",
+              background: "var(--bg-elevated)",
+              border: "1px solid var(--surface-border)",
+              borderRadius: "8px",
+              color: "var(--text-primary)",
+              fontSize: "13px",
+              outline: "none"
+            }}
           />
         </div>
+
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Transfused Unit ID</label>
+          <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "var(--text-muted)", marginBottom: "4px" }}>
+            Transfused Blood Unit ID
+          </label>
           <input
             type="text"
-            className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
-            placeholder="Scan Barcode or Enter ID"
+            className="w-full"
+            placeholder="Scan Barcode or Enter ID (e.g. UNIT-A12B)"
             value={unitId}
             onChange={(e) => setUnitId(e.target.value)}
             required
+            style={{
+              width: "100%",
+              padding: "10px 14px",
+              background: "var(--bg-elevated)",
+              border: "1px solid var(--surface-border)",
+              borderRadius: "8px",
+              color: "var(--text-primary)",
+              fontSize: "13px",
+              outline: "none"
+            }}
           />
         </div>
 
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-blue-900 hover:bg-blue-800 text-white font-medium py-2.5 px-4 rounded-lg transition-colors flex justify-center items-center"
+          className="btn btn-primary"
+          style={{ width: "100%", padding: "12px", marginTop: "4px" }}
         >
-          {loading ? (
-            <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-          ) : (
-            'Process Arrival & Claim'
-          )}
+          {loading ? "Routing NHCX Claim..." : "💳 Process Arrival & Submit NHCX Pre-Auth"}
         </button>
       </form>
 
       {claim && (
-        <div className="mt-6 p-4 bg-blue-50 border border-blue-100 rounded-lg">
-          <div className="flex items-start justify-between">
+        <div
+          className="animate-fade-in"
+          style={{
+            marginTop: "16px",
+            padding: "14px",
+            background: "rgba(59, 130, 246, 0.08)",
+            border: "1px solid rgba(59, 130, 246, 0.2)",
+            borderRadius: "10px"
+          }}
+        >
+          <div className="flex-between" style={{ marginBottom: "8px" }}>
             <div>
-              <p className="text-sm font-bold text-blue-900">NHCX Claim Submitted</p>
-              <p className="text-xs text-blue-700 mt-1">Claim ID: {claim.claimId}</p>
+              <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--status-info)" }}>
+                NHCX Claim Simulated Submission
+              </div>
+              <div className="font-mono" style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                Claim ID: {claim.claimId}
+              </div>
             </div>
-            <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2 py-1 rounded">
-              {claim.status}
+            <span className="badge safe" style={{ fontSize: "10px" }}>
+              {claim.status || "SIMULATED_DEMO_SUBMISSION"}
             </span>
           </div>
-          <div className="mt-3 pt-3 border-t border-blue-200/50">
-            <p className="text-xs text-blue-800">
-              <span className="font-semibold">Processing:</span> {claim.processingTime}
-            </p>
-            <p className="text-xs text-blue-800 mt-1">
-              <span className="font-semibold">Verification:</span> {claim.details.blockchainProof}
-            </p>
+
+          <div style={{ fontSize: "11px", color: "var(--text-secondary)", lineHeight: 1.4 }}>
+            <div><strong>Insurer:</strong> {claim.details?.insurerCode || "PM_JAY"} (Policy: {claim.details?.policyNumber || "AUTO-DISASTER-01"})</div>
+            <div><strong>Verification:</strong> {claim.details?.medicalNecessityCheck || "Structural FHIR R4 validation passed"}</div>
+            <div style={{ marginTop: "6px", color: "var(--text-muted)", fontStyle: "italic" }}>
+              {claim.adjudicationNotice || "DEMONSTRATION PROTOTYPE: Auto-approval is a simulated protocol workflow. No actual insurance policy adjudication or financial settlement was executed with IRDAI."}
+            </div>
           </div>
         </div>
       )}

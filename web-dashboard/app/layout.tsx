@@ -2,6 +2,8 @@
 import "./globals.css";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { AuthProvider, useAuth } from "../lib/auth-context";
+import { AuthModal } from "../components/AuthModal";
 
 const navItems = [
   { label: "Overview", icon: "📊", href: "/", section: "DASHBOARD" },
@@ -21,6 +23,7 @@ const navItems = [
 
 function Sidebar() {
   const pathname = usePathname();
+  const { user, openAuthModal } = useAuth();
 
   let currentSection = "";
 
@@ -63,11 +66,26 @@ function Sidebar() {
       </nav>
 
       <div className="sidebar-footer">
-        <div className="sidebar-hospital">
-          <div className="sidebar-hospital-avatar">AH</div>
-          <div>
-            <div className="sidebar-hospital-name">Apollo Hospital</div>
-            <div className="sidebar-hospital-id">HFR-KA-0421</div>
+        <div
+          className="sidebar-hospital"
+          onClick={openAuthModal}
+          style={{ cursor: "pointer", transition: "all var(--transition-fast)" }}
+          title="Click to change role or re-authenticate"
+        >
+          <div className="sidebar-hospital-avatar">
+            {user ? user.name.substring(0, 2).toUpperCase() : "AH"}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              className="sidebar-hospital-name"
+              style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+            >
+              {user ? user.name : "Apollo Hospital"}
+            </div>
+            <div className="sidebar-hospital-id flex-between">
+              <span>{user?.role ? user.role.replace(/_/g, " ") : "HFR-KA-0421"}</span>
+              <span style={{ fontSize: "10px", color: "var(--rakt-400)", marginLeft: "4px" }}>🔑</span>
+            </div>
           </div>
         </div>
       </div>
@@ -90,10 +108,15 @@ export default function RootLayout({
         />
       </head>
       <body>
-        <div className="app-layout">
-          <Sidebar />
-          <main className="main-content">{children}</main>
-        </div>
+        <AuthProvider>
+          <div className="app-layout">
+            <Sidebar />
+            <main className="main-content">
+              {children}
+            </main>
+          </div>
+          <AuthModal />
+        </AuthProvider>
       </body>
     </html>
   );

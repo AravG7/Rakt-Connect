@@ -18,12 +18,56 @@ class HCXGatewayScreen extends StatelessWidget {
             style: TextStyle(fontWeight: FontWeight.w800)),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        actions: [
+          Container(
+            margin: const EdgeInsets.only(right: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.4)),
+            ),
+            child: const Center(
+              child: Text(
+                'PROTOTYPE / SIMULATED',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFFF59E0B),
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Prototype Status Notice
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF59E0B).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.3)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.science_outlined, size: 16, color: Color(0xFFF59E0B)),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'SIMULATION MODE: Claims follow HL7 FHIR R4 schema. Live NHCX/IRDAI clearinghouse connection planned.',
+                      style: TextStyle(fontSize: 11, color: Color(0xFFF59E0B), fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             // Zero Copay Banner
             _buildZeroCopayBanner(),
             const SizedBox(height: 16),
@@ -387,7 +431,7 @@ class HCXGatewayScreen extends StatelessWidget {
           SizedBox(width: 8),
           Expanded(
             child: Text(
-                'Claims follow HL7 FHIR R4 (Claim + ClaimResponse). Connected to NHCX sandbox for PM-JAY and private insurers.',
+                'Claims follow HL7 FHIR R4 (Claim + ClaimResponse). Conforms to NHCX specification in simulated sandbox mode; live IRDAI/NHCX clearinghouse integration is planned.',
                 style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
           ),
         ],

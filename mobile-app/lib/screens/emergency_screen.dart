@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/broadcast_service.dart';
+import '../services/auth_service.dart';
 
 class EmergencyScreen extends StatefulWidget {
   const EmergencyScreen({super.key});
@@ -52,6 +53,35 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
   void initState() {
     super.initState();
     _animController = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: true);
+    _loadLiveAlerts();
+  }
+
+  Future<void> _loadLiveAlerts() async {
+    try {
+      final liveList = await BroadcastService.getActiveAlerts();
+      if (liveList.isNotEmpty && mounted) {
+        setState(() {
+          for (final item in liveList) {
+            final id = item['id'];
+            if (!alerts.any((a) => a['id'] == id)) {
+              alerts.insert(0, {
+                'id': id,
+                'hospital': item['hospitalHfr'] ?? 'Apollo Hospital',
+                'distance': '${item['radiusKm'] ?? 10} km radius',
+                'eta': '~15 min',
+                'bloodGroup': item['bloodGroup'] ?? 'O-',
+                'severity': item['severityLevel'] ?? 'CRITICAL',
+                'unitsNeeded': item['targetAccepts'] ?? 5,
+                'accepted': (item['acceptedDonors'] as List?)?.length ?? 0,
+                'target': item['targetAccepts'] ?? 5,
+                'time': 'Just now',
+                'channels': ['WhatsApp', 'Push', 'IVR', 'SMS'],
+              });
+            }
+          }
+        });
+      }
+    } catch (_) {}
   }
 
   @override
@@ -62,9 +92,9 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
 
   Future<void> _respondToAlert(String broadcastId, String responseType) async {
     setState(() => _isLoading = true);
+    final auth = AuthService.instance;
     try {
-      // Hardcoded donor DID for demo purposes
-      final donorDid = 'did:rakt:donor:001';
+      final donorDid = auth.donorDid;
       final res = await BroadcastService.respondToBroadcast(
         broadcastId: broadcastId,
         donorDid: donorDid,
@@ -74,20 +104,32 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Response sent successfully: ${res['message'] ?? 'Thanks!'}'),
+          content: Text('Response sent successfully: ${res['message'] ?? 'Thank you for responding!'}'),
           backgroundColor: Colors.green,
         ),
       );
-      
+
+      // Add to past responses if accepted
+      if (responseType == 'ACCEPT') {
+        pastResponses.insert(0, {
+          'date': 'Today',
+          'hospital': alerts.firstWhere((a) => a['id'] == broadcastId, orElse: () => {'hospital': 'Emergency Center'})['hospital'],
+          'group': alerts.firstWhere((a) => a['id'] == broadcastId, orElse: () => {'bloodGroup': 'O-'})['bloodGroup'],
+          'status': 'Accepted',
+          'tokens': 900
+        });
+      }
+
       // Remove the alert from the UI
       setState(() {
         alerts.removeWhere((a) => a['id'] == broadcastId);
       });
     } catch (e) {
       if (!mounted) return;
+      final errorMsg = e.toString().replaceFirst('Exception: ', '');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to send response. Please try again.'),
+          content: Text(errorMsg),
           backgroundColor: Colors.red,
         ),
       );
