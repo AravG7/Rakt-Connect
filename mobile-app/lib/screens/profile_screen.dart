@@ -177,8 +177,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 didController.text.trim(),
                 nameController.text.trim(),
               );
-              if (mounted) {
+              if (ctx.mounted) {
                 Navigator.pop(ctx);
+              }
+              if (mounted) {
                 setState(() {});
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('Signed in as ${_auth.userName} (${_auth.donorDid})')),
@@ -449,14 +451,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       'Sign Out',
                       'Clear session token (${_auth.donorDid})',
                       const Color(0xFFEF4444),
-                      onTap: () async {
-                        await _auth.logout();
-                        if (mounted) {
-                          setState(() {});
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Logged out. Session cleared.')),
-                          );
-                        }
+                      onTap: () {
+                        _auth.logout();
+                        setState(() {});
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Logged out. Session cleared.')),
+                        );
                       },
                     )
                   else
